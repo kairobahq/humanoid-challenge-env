@@ -8,7 +8,9 @@
 | `task_a_demo.py` | **과제 A 의 시작 장면**을 하나 만들어 띄웁니다 |
 | `task_b_demo.py` | **과제 B 의 시작 장면**을 하나 만들어 띄웁니다 |
 | `task_b_replay.py` | **과제 B 한 판 전부**를 처음부터 끝까지 틀어 줍니다 |
+| `task_c_demo.py` | **과제 C 의 시작 장면**을 하나 만들어 띄웁니다 |
 | `taskA/` | 과제 A 의 **장면 정의 모듈과 실측값**. 위 데모가 읽습니다 |
+| `taskC/` | 과제 C 의 **장면 정의 모듈** — 상품 8 종, 계산대 위 배치 규칙, 검사. 위 데모가 읽습니다 |
 | `demos/` | `task_b_replay.py` 가 트는 시연 기록 일곱 판 (2.4 MB) |
 
 ### 코드는 여기, 에셋은 이미지
@@ -36,6 +38,23 @@ scripts/taskA/
 
 > 과제 B 는 장면 정의도 이미지 안에 있습니다(`taskB_*.py`). 과제 A 만 저장소에 두는 것은
 > 매장 에셋이 워낙 커서 코드와 에셋을 갈라 놓는 편이 나았기 때문입니다.
+
+과제 C 도 장면 정의를 저장소에 둡니다. 과제 A 와 같은 이유입니다.
+
+```
+scripts/taskC/
+  taskC_products.py     상품 8 종 -- 코드용 이름, 사람이 읽는 이름, 원통/상자, 에셋 경로
+  taskC_layout.py       계산대·로봇 시작 자세·빨간 띠·스캐너 자리·카메라 셋 -- 장면의 모든 수치
+  taskC_deal.py         seed 로 상품 셋을 고르고 띠 안에 자리와 자세를 정한다 (QR 면은 -Y)
+  taskC_check.py        가라앉은 상품이 규칙을 지켰는지 본다 -- 띠 안, 안 뚫림, 안 넘어짐, QR 방위, 간격
+  taskC_report.py       터미널 요약과 --scene-json
+  taskC_counter.py      빨간 띠를 그리고, 매장의 정적 스캐너·바구니를 끄고, 계산대 맨 아래 선반판을
+                        잘라낸다 (Isaac 안에서만)
+```
+
+**에셋은 배포 이미지에서 옵니다** — 매장 USD 는 과제 A 와 같은 것이고, 여기에 QR 타일이
+붙은 상품 8 종(`products_c/`, 각 `<이름>_phys.usd`)과 스캐너(`fixtures/scanner/`)가 더
+옵니다. 상품 USD 는 QR 타일의 위치와 법선이 붙박여 있어서 과제 B 의 상품과 파일이 다릅니다.
 
 ---
 
@@ -459,3 +478,154 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 
 이 기록은 매장 안에서 모았지만 배포 이미지에는 매장 USD 가 들어 있지 않습니다.
 로봇·진열대·책상·상자·상품은 기록 그대로이고, 주위의 가게만 비어 있습니다.
+
+---
+
+## `task_c_demo.py`
+
+```bash
+# 컨테이너 안에서
+cd /workspace/cyclo_lab
+${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
+    /workspace/challenge_scripts/task_c_demo.py --seed 1000
+```
+
+창이 뜨고, 그 안에 과제 C 의 **에피소드가 시작되는 순간**이 서 있습니다. 여기서
+멈춥니다. 집지도, 비추지도, 놓지도 않습니다.
+
+### 장면에 있는 것
+
+**매장** — 과제 A 와 같은 편의점 전체. 장면은 계산대 앞이고 로봇은 주행하지 않습니다.
+조명은 매장 USD 의 것(돔 + 천장 램프)만 씁니다 — 학습 데이터를 찍은 조명 그대로입니다.
+
+**계산대 위 빨간 띠** — 로봇 좌표로 앞 0.110 ~ 0.500 m, 왼쪽 -0.010 ~ 0.570 m 의
+사각형을 20 mm 빨간 테이프로 두른 자리입니다. 상판 높이는 0.9035 m. 계산대 직원 쪽 맨
+아래 선반판(바닥 위 10 cm)은 로봇 섀시가 올라타지 않도록 잘라냅니다(학습 데이터와 동일).
+
+**상품 셋** — 8 종 가운데 seed 가 고른 셋. 슬롯 0 이 집을 상품입니다. 놓이는 규칙:
+
+| 규칙 | 값 |
+|---|---|
+| QR 면 방위 | 로봇의 정 오른쪽(세계 -Y). 오차 3 도 안 |
+| 원통(프링글스·컵·캔) | 서 있음. 절반은 뒤집어 세움(QR 이 상하 반전) |
+| 상자(예감·롯데샌드) | 눕힘. QR 면이 옆을 봄 |
+| 상품 간격 | 10 cm 이상 (회전한 바닥면 기준) |
+| 스폰 뒤 | 3 초 물리 정착. 규칙을 어기면 같은 seed 안에서 재딜 (최대 50 회) |
+
+**스캐너** — 왼손이 드는 자리 (로봇 좌표 0.330, -0.158, 1.161) 에 중력 없이 떠 있습니다.
+매장 USD 에 놓여 있던 정적 스캐너 소품과 계산대 옆 바구니는 이 데모가 끕니다.
+
+**로봇** — 계산대 앞 (-3.45, -4.27) 에서 +Y 를 봅니다. 몸통 0.0, 고개 39.8 도 아래,
+양팔 스토우. 바퀴가 바닥에 닿아 있습니다.
+
+**카메라** — 머리 `head_cam` 672×376, 손목 `left_wrist_cam`/`right_wrist_cam` 424×240.
+
+### 상품 이름
+
+| 코드용 이름 | 사람이 읽는 이름 | 모양 |
+|---|---|---|
+| `pringles_original_small` | small original Pringles tube | 원통 |
+| `pringles_sourcream_small` | small sour cream Pringles tube | 원통 |
+| `ottogi_cupnoodle_buldak` | Ottogi Buldak cup noodle | 원통 |
+| `samyang_buldak_cup` | Buldak stir-fried noodle cup | 원통 |
+| `chilsung_cider` | Chilsung cider can | 원통 |
+| `cocacola_zero` | Coca-Cola zero can | 원통 |
+| `yegam_original` | Yegam original potato chip tube | 상자 |
+| `lotte_sand` | Lotte Sand biscuit box | 상자 |
+
+### 옵션
+
+| 옵션 | 뜻 |
+|---|---|
+| `--seed N` | 장면을 정하는 수 (기본 1000) |
+| `--products a,b,c` | 상품 셋을 코드용 이름으로 직접 고릅니다. 첫 번째가 집을 상품 |
+| `--seconds S` | S 초 동안 세워 두고 끝냅니다. 0 이면 창을 닫을 때까지 (`--headless` 면 1 초) |
+| `--headless` | 화면 없이 돌립니다 |
+| `--scene-json FILE` | 장면 내용을 JSON 으로 저장합니다 |
+| `--shot FILE.png` | 로봇 머리 카메라가 보는 그림을 한 장 저장합니다 |
+| `--check` | **에셋과 띠 기하만 검사하고 끝냅니다.** Isaac Sim 을 띄우지 않아 1 초면 됩니다 |
+
+### 먼저 `--check` 로 확인하기
+
+```bash
+${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
+    /workspace/challenge_scripts/task_c_demo.py --check
+```
+
+```
+[검사] 과제 C 장면 기하와 에셋 -- Isaac Sim 없이
+
+  계산대    중심 (-4.000, -4.220)  상판 0.9035  크기 3.233 x 1.800
+  로봇      (-3.450, -4.270)  yaw +90.0 도  몸통 +0.000  고개 39.8 도 아래
+  빨간 띠   로봇 좌표 x 0.1101~0.4999  y -0.010~0.570  (테이프 20 mm 안쪽 x 0.130~0.480  y 0.010~0.550)
+  상품 8 종  /workspace/cyclo_lab/source/cyclo_lab/data/products_c
+    pringles_original_small    small original Pringles tube        71.7 x  71.7 x 101.0 mm  원통  O
+    pringles_sourcream_small   small sour cream Pringles tube      71.7 x  71.7 x 101.1 mm  원통  O
+    ottogi_cupnoodle_buldak    Ottogi Buldak cup noodle           101.5 x 101.5 x 102.2 mm  원통  O
+    yegam_original             Yegam original potato chip tube     55.0 x 210.0 x  55.0 mm  상자  O
+    samyang_buldak_cup         Buldak stir-fried noodle cup       102.5 x 102.5 x 110.9 mm  원통  O
+    chilsung_cider             Chilsung cider can                  66.1 x  66.3 x 125.2 mm  원통  O
+    cocacola_zero              Coca-Cola zero can                  65.9 x  65.9 x 122.8 mm  원통  O
+    lotte_sand                 Lotte Sand biscuit box              48.0 x 225.0 x  48.0 mm  상자  O
+  스캐너 USD /workspace/cyclo_lab/source/cyclo_lab/data/fixtures/scanner/scanner_taskC.usd
+  매장 USD  /workspace/cyclo_lab/source/cyclo_lab/data/store/scene/fixture_kit/out/store_scene.usd
+
+  판정: 문제 없음
+```
+
+상품 8 종의 USD 와 QR 타일 정보, 스캐너 USD, 매장 USD 가 제자리에 있는지 봅니다. 문제가
+있으면 `판정:` 줄 다음에 `!` 로 시작하는 줄로 하나씩 찍히고 종료 코드가 1 이 됩니다.
+
+### 장면을 글로 받기
+
+```bash
+${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
+    /workspace/challenge_scripts/task_c_demo.py --seed 1000 --headless --seconds 1 \
+    --scene-json /workspace/user/scene_c_1000.json
+```
+
+```
+[장면] seed 1000, 집을 것 small original Pringles tube [pringles_original_small]
+
+  로봇 -- 계산대를 마주 보고 선다 (정지 과제: 주행하지 않는다)
+    자리      (-3.449, -4.274)  yaw +90.0 도
+    몸통      +0.0000    고개 39.8 도 아래    양팔 스토우 (오른팔 joint1 1.200)
+    계산대    중심 (-4.000, -4.220)  상판 0.9035 m
+
+  계산대 위 상품 -- 슬롯 0 이 집을 상품, QR 면은 정 오른쪽(-Y)을 본다
+    0: small original Pringles tube     (-3.877, -3.853, 0.954)  [pringles_original_small] 직립  QR 오차 0.0 도  최근접 13.3 cm
+    1: Lotte Sand biscuit box           (-3.496, -3.941, 0.927)  [lotte_sand] 눕힘  QR 오차 0.0 도  최근접 31.7 cm
+    2: small sour cream Pringles tube   (-3.950, -4.075, 0.954)  [pringles_sourcream_small] 직립  QR 오차 0.0 도  최근접 13.3 cm
+
+  빨간 띠(로봇 좌표)  x 0.110~0.500  y -0.010~0.570  테이프 20 mm  -- 상품끼리 10 cm 이상
+  스캐너    왼손이 드는 자리 (-3.292, -3.940, 1.161)  크기 0.067 x 0.161 x 0.087 m
+  카메라    head_cam 672x376, left_wrist_cam 424x240, right_wrist_cam 424x240
+  재딜      0 회
+
+[i] 로봇 시작 자세  x -3.4489  y -4.2736  yaw +90.00 deg  몸통 -0.0262
+[i] 가장 낮은 바퀴 중심 0.0883 m, 반지름 0.0864 -> 바닥과 +1.9 mm. 닿아 있다
+[i] 기울기 0.0도, 위쪽 축 (0.001, -0.000, 1.000) -> 서 있음
+[i] 상품 0 pringles_original_small  (-3.8770, -3.8533, 0.9539)  상판 위  띠 안
+[i] 상품 1 lotte_sand  (-3.4963, -3.9412, 0.9274)  상판 위  띠 안
+[i] 상품 2 pringles_sourcream_small  (-3.9499, -4.0753, 0.9539)  상판 위  띠 안
+[i] 스캐너  (-3.2922, -3.9400, 1.1610) -- 왼손이 드는 자리
+[i] 장면이 섰다. 여기서 과제 C 가 시작한다.
+```
+
+JSON 에는 같은 내용이 들어 있습니다. 상품마다 `pos`(세계)·`pos_robot`(로봇 좌표: x 앞,
+y 왼쪽)·`quat`·`quat_robot`·`cylinder`·`qr_az_err_deg`·`gap_min_m`, 그리고 `band`,
+`counter`, `robot`, `scanner`, `cameras`, `redeal`.
+
+### 화면 없이 장면을 눈으로 보기
+
+```bash
+${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
+    /workspace/challenge_scripts/task_c_demo.py --seed 1000 --headless \
+    --seconds 1 --shot /workspace/user/shot_c_1000.png
+```
+
+### 좌표
+
+바닥이 z = 0 이고 매장 좌표는 과제 A 와 같습니다. 계산대 중심 (-4.00, -4.22), 상판
+0.9035 m. 로봇 좌표는 로봇 발 밑이 원점, x 가 앞(세계 +Y), y 가 왼쪽(세계 -X)입니다.
+`taskC_layout.py` 의 `robot_to_world` / `world_to_robot` 이 그 변환입니다.
