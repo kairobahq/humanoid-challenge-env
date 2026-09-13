@@ -74,6 +74,7 @@ import math                     # noqa: E402
 
 CYCLOLAB = os.environ.get("CYCLOLAB_PATH", "/workspace/cyclo_lab")
 _SRC = f"{CYCLOLAB}/source/cyclo_lab/cyclo_lab"
+_HERE = os.path.dirname(os.path.abspath(__file__))
 if not os.path.isdir(_SRC):
     raise SystemExit(f"환경 코드를 찾지 못했다: {_SRC}\n"
                      f"CYCLOLAB_PATH 를 확인하라 (현재 {CYCLOLAB!r}).")
@@ -92,7 +93,10 @@ def _by_path(name, path):
     return mod
 
 
-REALCAM = _by_path("FFW_SG2_REAL_cameras", f"{_SRC}/assets/robots/FFW_SG2_REAL_cameras.py")
+# 카메라 값은 **이미지가 아니라 이 저장소**에서 온다 -- 스크립트 바로 옆의 파일이다.
+# 2026-09-13: 이미지(2026-09-07 판)에 이 파일이 없어 데모 셋이 전부 FileNotFoundError 로
+# 죽었다 (humanoid-challenge-env#4). 저장소에 두면 `git pull` 만으로 값이 따라온다.
+REALCAM = _by_path("FFW_SG2_REAL_cameras", f"{_HERE}/FFW_SG2_REAL_cameras.py")
 head_camera_cfg, wrist_camera_cfg = REALCAM.head_camera_cfg, REALCAM.wrist_camera_cfg
 taskB_shelf = _by_path("taskB_shelf", f"{_SRC}/assets/object/taskB_shelf.py")
 taskB_restock = _by_path("taskB_restock", f"{_SRC}/assets/object/taskB_restock.py")
