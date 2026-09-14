@@ -795,7 +795,22 @@ def main():
     stat = [{"slug": d["slug"], "max_lift_mm": 0.0, "min_scanner_mm": 1e9, "min_scanner_frame": -1,
              "moved_mm": 0.0} for d in PRODUCTS]
     ph_at = {int(p["start_frame"]): p["name"] for p in PHASES if p.get("name")}
-    x0, x1, y0, y1 = L.band_inner()
+    # 판 끝 요약의 띠 판정은 채점기(scorer/taskc_scorer.py)와 같은 규칙으로 본다: 상품 AABB 의 XY 투영이
+    # 띠(테이프 바깥선) 사각형과 **일부라도 겹치면** '띠 안' -- 걸쳐 있어도 인정. 종전에는 상품 **중심**이
+    # 테이프 안쪽(band_inner)에 있는지를 봐서, 채점기는 통과시키는 걸친 상품을 여기서 '띠 밖'으로 찍었다.
+    from taskC.scorer.geometry import aabb_xy_overlaps_rect as _band_overlap   # noqa: E402
+    _band_rect = (L.BAND["x0"], L.BAND["x1"], L.BAND["y0"], L.BAND["y1"])
+
+    def prod_aabb_r(k):
+        """상품 k 의 현재 OBB 8꼭짓점을 로봇 좌표로 옮겨 AABB (min, max) 를 돌려준다.
+        반치수는 씬 JSON 의 `he` (채점기와 같은 값)."""
+        _R = _quat_mat(scene[f"p_{k}"].data.root_quat_w[0].cpu().numpy())
+        _he = np.asarray(SCENE["products"][k].get("he", (0.03, 0.03, 0.03)), dtype=float)
+        _pw = (scene[f"p_{k}"].data.root_pos_w[0] - origin).cpu().numpy().astype(float)
+        _cs = np.array([L.world_to_robot(tuple(float(v) for v in (_pw + _R @ (np.array([sx, sy, sz], dtype=float) * _he))))
+                        for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)], dtype=float)
+        return _cs.min(0), _cs.max(0)
+
     t_wall = None
     import time as _time
     t_wall = _time.time()
@@ -934,7 +949,8 @@ def main():
     result = {"episode": os.path.basename(EPISODE), "frames": int(N), "hz": REC_HZ, "products": []}
     for i, d in enumerate(PRODUCTS):
         pr = prod_pos_r(i)
-        inside = (x0 <= pr[0] <= x1) and (y0 <= pr[1] <= y1)
+        _amin, _amax = prod_aabb_r(i)
+        inside = bool(_band_overlap(_amin, _amax, _band_rect))   # 걸침 포함 (채점기와 동일)
         dz_end = (pr[2] - start_pos[i][2]) * 1000.0
         st = stat[i]
         verdict = ("들어올림 O" if st["max_lift_mm"] > 20.0 else "들어올림 X")
