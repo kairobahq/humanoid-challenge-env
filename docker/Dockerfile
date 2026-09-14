@@ -65,6 +65,14 @@ COPY stage/ ${CYCLOLAB_PATH}/
 RUN mv ${CYCLOLAB_PATH}/assets /workspace/assets && \
     ln -s /workspace/assets ${CYCLOLAB_PATH}/source/cyclo_lab/data
 
+# 과제 C 상품 8종 중 5종(chilsung_cider·lotte_sand·pringles_sourcream_small·samyang_buldak_cup·yegam_original)의
+# `<이름>_phys.usd` 는 보이는 메시 `.usdc` 를 수집 저장소 자리인 `/workspace/cyclo_lab/taskC/out/qr_usd/…`
+# 절대 경로로 문다(2026-09-14 실측). 그 자리가 없으면 물리 콜라이더만 남고 메시·QR 텍스처가 안 떠서
+# 스캐너 카메라가 QR 을 못 읽는다. 채점기(scripts/taskC/scorer/score_from_trace.py)도 기대 바코드를
+# 같은 경로의 info.json 에서 읽는다. 그 자리를 products_c 로 이어 준다.
+RUN mkdir -p ${CYCLOLAB_PATH}/taskC/out && \
+    ln -s /workspace/assets/products_c ${CYCLOLAB_PATH}/taskC/out/qr_usd
+
 RUN chmod +x ${ISAACLAB_PATH}/isaaclab.sh && \
     ln -sf ${ISAACSIM_ROOT_PATH} ${ISAACLAB_PATH}/_isaac_sim
 
