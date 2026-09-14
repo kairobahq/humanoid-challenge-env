@@ -99,7 +99,8 @@ check("못 읽은 항목은 unscored 에 남는다", "picked" in r["unscored"], 
 r = R.score(m(arrive={"stopped_ever": False, "reached": False, "nearest_edge_mm": 79.0}))
 check("안 멈춤", got(r, "arrived"), False)
 check("안 멈추면 held 도 False (None 아님)", got(r, "held"), False)
-check("안 멈춰도 no_hit 은 채점한다", got(r, "no_hit"), True)
+# 안 부딪혔어도 **도착을 못 했으면 no_hit 도 없다** (사용자 결정 2026-09-14).
+check("도착 못 하면 no_hit 도 없다 (안 부딪혔어도)", got(r, "no_hit"), False)
 
 r = R.score(m(arrive={"stopped_ever": True, "reached": False, "nearest_edge_mm": 175.0}))
 check("멈췄지만 구역 밖", got(r, "arrived"), False)
@@ -126,6 +127,41 @@ r = R.score(m(ended="dropped"))
 check("낙하면 placed 0점", got(r, "placed"), False)
 check("낙하면 stayed 0점", got(r, "stayed"), False)
 check("낙하 판도 no_hit 은 채점", got(r, "no_hit"), True)
+
+# ── ALL 1# 는 **책상 둘레에 들고 도착한 판만** 받는다 (사용자 결정 2026-09-14) ─────────────
+# 아무것도 안 해도 「부딪히지 않았다」 4 점이 나오던 구멍.  위 낙하 판이 True 인 것은 기본값
+# `m()` 이 도착·들고 있음을 둘 다 참으로 두기 때문이다.
+r = R.score(m(ended="time_limit", lift={"peak_mm": 0.0, "gripped": False},
+              arrive={"stopped_ever": True, "reached": False, "nearest_edge_mm": 8000.0,
+                      "held": False},
+              place={"reached_desk": False}, watch={"opened": False}))
+check("아무것도 안 함: no_hit 없음", got(r, "no_hit"), False)
+check("아무것도 안 함: 총점 0", r["total"], 0.0)
+
+r = R.score(m(ended="time_limit", arrive={"reached": False, "held": False},
+              place={"reached_desk": False}, watch={"opened": False}))
+check("집기만 함: no_hit 없음", got(r, "no_hit"), False)
+check("집기만 함: 총점 3", r["total"], 3.0)
+
+r = R.score(m(arrive={"reached": True, "held": False},
+              place={"reached_desk": False}, watch={"opened": False}))
+check("빈손으로 도착: no_hit 없음", got(r, "no_hit"), False)
+check("빈손으로 도착: 총점 3+3", r["total"], 6.0)
+
+r = R.score(m(place={"reached_desk": False}, watch={"opened": False}))
+check("들고 도착, 놓기 실패: no_hit 있음", got(r, "no_hit"), True)
+check("들고 도착, 놓기 실패: 총점 3+3+4+4", r["total"], 14.0)
+
+r = R.score(m(arrive={"reached": None}))
+check("도착 못 읽음: no_hit 도 None", got(r, "no_hit"), None)
+check("도착 못 읽음: unscored 에 no_hit", "no_hit" in r["unscored"], True)
+
+r = R.score(m(arrive={"held": None}))
+check("들고 있었는지 못 읽음: no_hit 도 None", got(r, "no_hit"), None)
+
+r = R.score(m(ended="hit", furniture={"hit": True, "worst_mm": 5.0},
+              arrive={"reached": False, "held": False}))
+check("도착 전에 부딪힘: no_hit 없음", got(r, "no_hit"), False)
 
 # ── Sub 3# 얹기 -- 걸침은 **여기서 안 본다**, 대신 책상 20 mm ──────────────────────────
 # 시트: "여기는 얹히기(책상 상판과 접촉)만 하면 됨."
