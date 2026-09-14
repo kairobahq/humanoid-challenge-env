@@ -1,0 +1,53 @@
+{
+ "slug": [
+  "pringles_sourcream_small",
+  "lotte_sand",
+  "yegam_original"
+ ],
+ "seed": 6601333000,
+ "grade": "CLEAN",
+ "n_ok": 0,
+ "product_name": [
+  "프링글스 사워크림",
+  "롯데샌드",
+  "예감 오리지널"
+ ],
+ "instruction": [
+  "계산대 위의 프링글스 사워크림을 집어 스캐너로 바코드를 인식시킨 뒤 제자리에 다시 놓아라",
+  "계산대 위의 롯데샌드를 집어 스캐너로 바코드를 인식시킨 뒤 제자리에 다시 놓아라",
+  "계산대 위의 예감 오리지널을 집어 스캐너로 바코드를 인식시킨 뒤 제자리에 다시 놓아라"
+ ],
+ "subtasks": {
+  "1": "프링글스 사워크림을 잡아라",
+  "2": "잡은 프링글스 사워크림의 바코드를 스캐너로 인식시켜라",
+  "3": "프링글스 사워크림을 다시 제자리에 가져다 놓아라"
+ },
+ "joined": [
+  "6601333000_s0_pringles_sourcream_small",
+  "6601333000_s1_lotte_sand",
+  "6601333000_s2_yegam_original"
+ ],
+ "chain_order": [
+  "pringles_sourcream_small",
+  "lotte_sand",
+  "yegam_original"
+ ],
+ "n_frames": 6836,
+ "join_bridge": "2s 등속 복귀 + 1s 정지, 카메라는 정지화면",
+ "gt": "GT0",
+ "all_products_success": true,
+ "note": "상품 3개 모두 잡기·QR 판독·내려놓기 성공 (예감은 띠 테두리에 걸쳐 놓임 = 득점 인정)",
+ "dev_replay_result": {
+  "slot0": "PASS 들림337mm 띠안True 판독2건 스캐너223mm",
+  "slot1": "PASS 들림433mm 띠안True 판독2건 스캐너236mm",
+  "slot2": "FAIL 들림405mm 띠안False 판독4건 스캐너257mm"
+ },
+ "how_made": "v5 수확·밀 파이프라인으로 같은 시드에서 상품 3개를 각각 기록한 뒤 기본자세 복귀 다리(2초 등속+1초 정지)로 이어 붙임. dev 재생기(task_c_replay.py --trace)로 연속 재생 검증.",
+ "scorer_total": "51/51",
+ "scorer_per_product": {
+  "pringles_sourcream_small": 17,
+  "lotte_sand": 17,
+  "yegam_original": 17
+ },
+ "scorer_note": "scorer/score_from_trace.py 로 채점 (2026-09-14). 띠 배치는 AABB 교차(걸침 인정)."
+}

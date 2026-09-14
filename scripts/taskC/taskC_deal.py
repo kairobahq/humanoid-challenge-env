@@ -267,7 +267,9 @@ def _spot_ok(x, y, hx, hy, placed, grip, want):
 
 def gap_target(attempt):
     """놓을 때 띄우는 거리. 정착하며 1.5~3.5 cm 밀리므로 재딜할수록 더 띄운다."""
-    return L.MIN_GAP + 0.015 + 0.010 * min(attempt // 4, 3)
+    # 2026-09-12 실측: 재딜마다 목표를 키우면 좁은 띠에서 자리가 아예 없어 헛돈다.
+    # 여유는 1.5 cm 로 고정한다 (검사는 그대로 `L.MIN_GAP`).
+    return L.MIN_GAP + 0.015
 
 
 def pick_spot(rng, x0, x1, y0, y1, hx, hy, placed, grip, near, xm, ym, want0=None):

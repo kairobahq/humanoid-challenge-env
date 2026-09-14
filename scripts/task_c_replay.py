@@ -75,6 +75,8 @@ parser.add_argument("--q-free-close", type=float, default=None, metavar="RAD",
                          "`--measure-q-free` 로 따로 재서 넣는다.")
 parser.add_argument("--measure-q-free", action="store_true",
                     help="빈손 닫힘 위치만 재고 끝낸다. 이 값을 --q-free-close 로 넘긴다.")
+parser.add_argument("--record", default=None, metavar="DIR",
+                    help="매 프레임 머리캠·손목캠 그림을 DIR/cam_*/%06d.jpg 로 적는다 (영상용, 재생은 느려진다)")
 parser.add_argument("--trace", default=None, metavar="DIR",
                     help="채점용 관측 트레이스를 이 폴더에 남긴다 (trace.jsonl · scene.json · "
                          "decode.json). taskC/scorer/score_from_trace.py 가 읽는다.")
@@ -574,6 +576,28 @@ def main():
     zero_steer = torch.zeros((1, len(steer_ids)), device=dev)
     zero_wheel = torch.zeros((1, len(wheel_ids)), device=dev)
     render = not args_cli.headless
+    # --record: 그림은 QrReader.try_read 와 같은 방법으로 얻는다 (sim.render() 뒤 cam.update(0.0)).
+    _REC_DIR = args_cli.record
+    _REC_MAP = (("head_cam", "cam_head"), ("left_wrist_cam", "cam_wrist_left"), ("right_wrist_cam", "cam_wrist_right"))
+    _REC_N = int(os.environ.get("TASKC_REC_RENDER_N", "2"))
+    if _REC_DIR:
+        import cv2 as _cv2
+        for _cn, _dn in _REC_MAP:
+            os.makedirs(os.path.join(_REC_DIR, _dn), exist_ok=True)
+        print(f"[재생] --record: 3캠 그림을 {_REC_DIR} 에 적는다 (render {_REC_N}회/프레임)", flush=True)
+
+    def _rec_frame(k):
+        for _ in range(_REC_N):
+            sim.render()
+        for _cn, _dn in _REC_MAP:
+            try:
+                _c = scene[_cn]
+            except KeyError:
+                continue
+            _c.update(0.0)
+            _rgb = np.asarray(_c.data.output["rgb"][0, ..., :3].cpu(), dtype=np.uint8)
+            _rgb = L.apply_rot180(_cn, _rgb)
+            _cv2.imwrite(os.path.join(_REC_DIR, _dn, "%06d.jpg" % k), _rgb[..., ::-1])
     step_count = [0]
     IL, IR = REC_JOINTS.index("gripper_l_joint1"), REC_JOINTS.index("gripper_r_joint1")
 
@@ -807,6 +831,8 @@ def main():
                     led_at.pop(0)
                     led.blink()
                 led.tick(PHYSICS_DT)
+        if _REC_DIR:
+            _rec_frame(k)
         if recog is not None and weld.get("on") and "fq" in weld:
             _nm = ph_at.get(k)
             if _nm is not None:

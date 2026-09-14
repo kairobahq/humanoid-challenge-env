@@ -99,5 +99,10 @@ def make_traced_copy(src: str, dst: str) -> str:
 if __name__ == "__main__":
     src = sys.argv[1] if len(sys.argv) > 1 else "taskC/v4/qr_sweep_replay.py"
     dst = sys.argv[2] if len(sys.argv) > 2 else "/tmp/qr_sweep_replay_traced.py"
+    if not pathlib.Path(src).is_file():
+        # 수집 파이프라인 쪽 도구다 -- 배포본에는 qr_sweep_replay.py 가 없다. 참가자는 task_c_replay.py --trace 를 쓴다.
+        raise SystemExit("사용법: trace_patch.py <qr_sweep_replay.py 경로> [출력 사본]\n"
+                         f"원본이 없습니다: {src}  (이 도구는 수집 파이프라인용입니다. "
+                         "재생 관측은 task_c_replay.py --trace DIR 로 남기십시오)")
     print("패치 사본:", make_traced_copy(src, dst))
     shutil.copystat(src, dst)
