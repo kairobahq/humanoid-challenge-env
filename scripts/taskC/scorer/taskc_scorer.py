@@ -63,7 +63,8 @@ class ScoreConfig:
     decode_require_coverage: bool = False
     pts_decode: float = 7.0
 
-    # Sub 3 빨간 띠 안에 놓았는가 (3점)
+    # Sub 3 빨간 띠에 놓았는가 (3점) -- 상품 AABB 가 띠(테이프 바깥선)와 **일부라도 겹치면** 인정, 걸침 포함
+    #   (geometry.aabb_xy_overlaps_rect; 중심 기준이 아니다)
     release_speed_max: float = 0.010     # 10 mm/s 미만이면 「멈췄다」
     pts_place: float = 3.0
 
