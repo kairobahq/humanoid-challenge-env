@@ -238,5 +238,15 @@ python3 scripts/taskC/scorer/check_trace.py out/trace
 
 *채점 기준표는 추후 변동될 수 있습니다.*
 
+#### 이런 증상이 보이면 확인할 것
+
+| 증상 | 먼저 확인할 것 |
+| --- | --- |
+| 상품이 **검정 덩어리로 보이거나 아예 안 보이는데** 로봇은 집고 나르며, QR 판독이 0회 | 컨테이너 안에서 `ls -la /workspace/cyclo_lab/taskC/out/qr_usd` — `/workspace/assets/products_c` 로 이어진 링크여야 합니다. 상품 USD 일부가 보이는 메시를 이 절대 경로로 참조하므로, 링크가 없으면 물리 콜라이더만 스폰됩니다. 없으면 이미지를 다시 빌드하거나(`./run/setup.sh`) `ln -s /workspace/assets/products_c /workspace/cyclo_lab/taskC/out/qr_usd` 로 걸어 주십시오. |
+| 채점기가 모든 상품의 판독을 「기대 코드가 나오지 않았다」로 FAIL | 채점기는 기대 바코드를 `taskC/out/qr_usd/<slug>/info.json` 에서 읽습니다. 위와 같은 링크가 있는지, 그리고 **컨테이너 안 `/workspace/cyclo_lab` 에서** 채점을 돌렸는지 확인하십시오(컨테이너 밖·다른 작업 폴더에서는 이 파일을 못 찾습니다). |
+| 재생기 요약의 `띠 안/밖` 과 채점기의 Sub 3 판정이 다르다 | 둘 다 「상품 AABB 가 테이프 바깥선 사각형과 일부라도 겹치면 성립」이 기준입니다. 옛 판 재생기(중심 기준)를 쓰고 있지 않은지 `git log -1 -- scripts/task_c_replay.py` 로 확인하십시오. |
+| 매장 바닥·계산대가 안 보이고 상품만 떠 있다 | 매장 씬 `store/scene/fixture_kit/out/store_scene.usd` 는 같은 폴더의 하위 파일들을 상대 경로로 물어 옵니다. 그 파일 하나만 다른 곳에 링크하면 하위 파일이 안 풀립니다 — 폴더째 있어야 합니다. |
+| `--set gt` 가 「동봉된 기록이 없습니다」로 끝난다 | `scripts/taskC/demos_gt/` 가 마운트됐는지(`/workspace/challenge_scripts/taskC/demos_gt`) 확인하십시오. 컨테이너를 만든 뒤 `git pull` 한 경우 마운트라 바로 보입니다. |
+
 ### 7. 좌표계 정보
 바닥면이 Z = 0이며 매장 좌표계는 과제 A와 동일합니다. 계산대 중심축은 (-4.00, -4.22)에 위치하며, 로봇은 그 앞인 (-3.45, -4.389)에서 +Y 방향을 바라봅니다(`taskC_layout.py` `ROBOT_BASE_WORLD`: 기준 자리 (-3.45, -4.27)에서 `TASKC_BASE_BACK` 기본값 0.119 m 만큼 계산대 반대쪽으로 물린 값). 씬 JSON 내부의 상품 좌표는 월드 절대 좌표(`pos`)와 로봇 기준 상대 좌표(`pos_robot`: x축 전방, y축 좌측)가 모두 제공됩니다.
