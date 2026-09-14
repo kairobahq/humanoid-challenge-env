@@ -72,6 +72,7 @@ import time                     # noqa: E402
 
 CYCLOLAB = os.environ.get("CYCLOLAB_PATH", "/workspace/cyclo_lab")
 _SRC = f"{CYCLOLAB}/source/cyclo_lab/cyclo_lab"
+_HERE = os.path.dirname(os.path.abspath(__file__))
 if not os.path.isdir(_SRC):
     raise SystemExit(f"환경 코드를 찾지 못했다: {_SRC}\n"
                      f"CYCLOLAB_PATH 를 확인하라 (현재 {CYCLOLAB!r}).")
@@ -85,7 +86,8 @@ def _by_path(name, path):
     return mod
 
 
-REALCAM = _by_path("FFW_SG2_REAL_cameras", f"{_SRC}/assets/robots/FFW_SG2_REAL_cameras.py")
+# 카메라 값은 **이미지가 아니라 이 저장소**에서 온다 (task_b_demo.py 와 같다, #4).
+REALCAM = _by_path("FFW_SG2_REAL_cameras", f"{_HERE}/FFW_SG2_REAL_cameras.py")
 head_camera_cfg, wrist_camera_cfg = REALCAM.head_camera_cfg, REALCAM.wrist_camera_cfg
 taskB_shelf = _by_path("taskB_shelf", f"{_SRC}/assets/object/taskB_shelf.py")
 taskB_table = _by_path("taskB_table", f"{_SRC}/assets/object/taskB_table.py")

@@ -16,7 +16,7 @@
 #   수집한 시연 데이터          환경이 아니라 대회 측의 산출물이다.
 #   과제 B 밖의 에셋           매장 씬, 과제 C 상품 등. 과제가 늘면 함께 들어온다.
 #
-# 빌드는 docker/build_image.sh 가 한다 — 이 Dockerfile 은 그 스크립트가 추린 트리를
+# 이 Dockerfile 은 대회측이 추려 배포하는 트리(challenge-overlay.tar.gz 를 푼 stage/)를
 # 받는 것을 전제로 한다.
 
 ARG ISAACSIM_BASE_IMAGE=nvcr.io/nvidia/isaac-sim
@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     && apt -y autoremove && apt clean autoclean \
     && rm -rf /var/lib/apt/lists/*
 
-# build_image.sh 가 추려 놓은 트리. 무엇이 들어오는지는 그 스크립트의 KEEP/PRUNE 목록이 전부다.
+# 대회측이 추려 놓은 트리. 무엇이 들어 있는지는 docs/assets.md 가 적는다.
 COPY stage/ ${CYCLOLAB_PATH}/
 
 # 에셋은 코드와 떨어진 /workspace/assets 에 둔다. 환경 코드(cyclo_lab)는 패키지 옆

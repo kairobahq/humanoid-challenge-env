@@ -13,12 +13,21 @@
 
 메시지 규약은 정책 서버 템플릿(eval-host-server)의 README 와 같다:
     reset -> ready, observation -> action, done. numpy 는 msgpack_numpy.
-관측 해상도는 실기 고정값(head_l 672x376, wrist_l/r 424x240)이다. 환경 코드의 카메라
-기본값은 244x244 라서 **여기서 채점과 같은 값으로 덮어쓴다** — 환경 기본값을 믿으면
-채점과 다른 그림으로 개발하게 된다.
+
+카메라 세 대는 **여기서 통째로 갈아 끼운다.** 끼우는 값은 이 저장소의
+`scripts/FFW_SG2_REAL_cameras.py` 에서 오고, 그 파일은 대회 측이 학습 데이터를 모을 때
+쓰는 것과 같은 파일이다 (실기 ai_worker 의 URDF·드라이버 설정과 ZED Mini / RealSense
+D405 의 제조사 사양에서 온 값. 출처는 그 파일 안에 적혀 있다).
+
+이미지 안 환경 코드의 카메라는 아직 옛 값이다 -- 2026-09-13 에 재 보니 머리 244x244 ·
+focal 12 · 0.1~2 m, 손목 focal 18 · 0.1~2 m 였다. 그대로 두면 **2 m 보다 먼 것이 아예
+안 그려지고**, 화각도 채점·학습 데이터와 다르다. 그래서 해상도만이 아니라 화각·보이는
+거리·붙는 자리까지 전부 덮어쓴다.
 """
 
 import argparse
+import importlib.util as _ilu
+import os as _os
 import uuid
 
 from isaaclab.app import AppLauncher
@@ -51,6 +60,14 @@ from websockets.sync.client import connect                            # noqa: E4
 
 import cyclo_lab.simulation_tasks.manager_based.manipulation.pick_place.config.ffw_sg2_convstore  # noqa: E402,F401
 
+# 카메라 값. **이미지가 아니라 이 저장소**에서 온다 -- 이 파일의 두 단계 위, `scripts/` 바로
+# 아래다. 경로로 읽는 이유는 `scripts/` 가 패키지가 아니기 때문이다.
+_REALCAM_PATH = _os.path.join(                                        # noqa: E402
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "FFW_SG2_REAL_cameras.py")
+_spec = _ilu.spec_from_file_location("FFW_SG2_REAL_cameras", _REALCAM_PATH)  # noqa: E402
+REALCAM = _ilu.module_from_spec(_spec)                                # noqa: E402
+_spec.loader.exec_module(REALCAM)                                     # noqa: E402
+
 try:
     import cv2
 
@@ -68,10 +85,11 @@ except ImportError:
         Image.fromarray(rgb).save(out, "JPEG", quality=85)
         return out.getvalue()
 
-# 실기 해상도 (템플릿 README §3). 씬 센서 이름 -> 와이어 키, (width, height).
-CAMS = {"head_cam": ("head_l", 672, 376),
-        "left_wrist_cam": ("wrist_l", 424, 240),
-        "right_wrist_cam": ("wrist_r", 424, 240)}
+# 씬 센서 이름 -> (와이어 키, FFW_SG2_REAL_cameras 안의 카메라 이름).
+# 해상도를 여기 적지 않는다 -- 그 값은 REALCAM 한 곳에서만 나온다.
+CAMS = {"head_cam": ("head_l", "cam_head"),
+        "left_wrist_cam": ("wrist_l", "cam_wrist_left"),
+        "right_wrist_cam": ("wrist_r", "cam_wrist_right")}
 
 
 def pack(msg):
@@ -106,7 +124,7 @@ def to_chunk(actions, action_dim):
 
 def build_observation(policy_obs, sim_time, instruction):
     imgs = {}
-    for scene_name, (wire_key, _w, _h) in CAMS.items():
+    for scene_name, (wire_key, _cam_name) in CAMS.items():
         del scene_name
         rgb = policy_obs[wire_key][0].cpu().numpy().astype(np.uint8)
         imgs[wire_key] = encode_jpeg(rgb)
@@ -171,11 +189,23 @@ def run_episode(env, idx, conf, control_hz, max_ticks):
 
 def main():
     cfg = parse_env_cfg(args.task, num_envs=1)
-    # 채점과 같은 해상도로 덮어쓴다 -- 환경 기본값은 244x244 다 (파일 머리 주석 참조).
-    for scene_name, (_key, w, h) in CAMS.items():
-        cam = getattr(cfg.scene, scene_name, None)
-        if cam is not None:
-            cam.width, cam.height = w, h
+    # 카메라 셋을 통째로 갈아 끼운다 (파일 머리 주석 참조). 해상도만 바꾸면 화각과 보이는
+    # 거리는 이미지의 옛 값(focal 12/18 · 0.1~2 m)이 그대로 남는다.
+    #
+    # 옛 설정에서 가져오는 것은 둘뿐이다 -- 찍는 주기와 받을 데이터 종류. 그 둘은 task 가
+    # 관측을 어떻게 읽는지에 매인 값이라 카메라 사양이 아니다. 나머지(해상도·화각·보이는
+    # 거리·붙는 자리)는 전부 REALCAM 이 정한다.
+    for scene_name, (_key, cam_name) in CAMS.items():
+        old = getattr(cfg.scene, scene_name, None)
+        if old is None:
+            continue
+        new = REALCAM.camera_cfg(cam_name,
+                                 update_period=old.update_period,
+                                 data_types=old.data_types)
+        setattr(cfg.scene, scene_name, new)
+        print(f"[demo] {scene_name}: {new.width}x{new.height} · 가로 "
+              f"{REALCAM.fov_deg(cam_name)[0]:.1f}° · {new.spawn.clipping_range[0]}~"
+              f"{new.spawn.clipping_range[1]} m")
     env = gym.make(args.task, cfg=cfg)
     control_hz = 1.0 / env.unwrapped.step_dt
     conf = {"action_dim": env.action_space.shape[-1], "control_hz": control_hz,

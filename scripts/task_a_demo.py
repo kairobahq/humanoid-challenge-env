@@ -126,6 +126,14 @@ taskA_layout = _by_path("taskA_layout", f"{_TASKA}/taskA_layout.py")
 taskA_scene_seed = _by_path("taskA_scene_seed", f"{_TASKA}/taskA_scene_seed.py")
 taskA_shelf_stock = _by_path("taskA_shelf_stock", f"{_TASKA}/taskA_shelf_stock.py")
 taskA_store_dress = _by_path("taskA_store_dress", f"{_TASKA}/taskA_store_dress.py")
+# 카메라 값. 위 모듈들과 같이 **이 저장소**에서 온다 (윗 주석의 세 가지 이유 그대로).
+# 2026-09-13: 이미지(2026-09-07 판)에 이 파일이 없어 데모 셋이 전부 FileNotFoundError 로
+# 죽었다 (humanoid-challenge-env#4). 그때 이 줄은 AppLauncher **뒤**에 있어서, 트레이스백이
+# 찍히고도 종료 코드가 0 으로 나왔다 -- 자동화가 성공으로 읽는다. 그래서 여기로 옮겼다.
+# 이 모듈은 부를 때만 isaaclab 을 import 하므로 AppLauncher 앞에서 읽어도 된다.
+REALCAM = _by_path("FFW_SG2_REAL_cameras", os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "FFW_SG2_REAL_cameras.py"))
+head_camera_cfg, wrist_camera_cfg = REALCAM.head_camera_cfg, REALCAM.wrist_camera_cfg
 
 # 물리 한 걸음. 과제 B 와 같은 값이다.
 #
@@ -455,8 +463,6 @@ from cyclo_lab.assets.robots.FFW_SG2 import (                         # noqa: E4
 taskA_colliders = _by_path("taskA_colliders", f"{_TASKA}/taskA_colliders.py")
 taskA_stools = _by_path("taskA_stools", f"{_TASKA}/taskA_stools.py")
 robot_pose = _by_path("taskA_robot_pose", f"{_TASKA}/taskA_robot_pose.py")
-REALCAM = _by_path("FFW_SG2_REAL_cameras", f"{_SRC}/assets/robots/FFW_SG2_REAL_cameras.py")
-head_camera_cfg, wrist_camera_cfg = REALCAM.head_camera_cfg, REALCAM.wrist_camera_cfg
 
 LEFT_JOINTS = [f"arm_l_joint{i + 1}" for i in range(7)]
 RIGHT_JOINTS = [f"arm_r_joint{i + 1}" for i in range(7)]
@@ -467,7 +473,7 @@ class World(InteractiveSceneCfg):
     """매장 전체, 바닥, 로봇, 탁상 위 바구니, 그리고 목적지 옆 책상.
 
     로봇에 달린 카메라 셋은 과제 B 데모와 같은 값이다 -- 정책이 받게 될 관측이 어떤
-    화각인지 여기서 확인할 수 있다. 값은 이미지 안의 assets/robots/FFW_SG2_REAL_cameras.py 가
+    화각인지 여기서 확인할 수 있다. 값은 이 저장소의 `scripts/FFW_SG2_REAL_cameras.py` 가
     유일한 출처다: head_cam 672x376 · 가로 85.0° (ZED Mini 왼눈), 손목 두 대 424x240 · 가로 87.0°
     (실기 ai_worker FFW-SG2 의 D405 그대로, camera_?_link 에 그대로 · 0.03~100 m, 2026-09-11).
     """
