@@ -330,15 +330,26 @@ def main():
     print("[store]    manifest.json layout.json")
 
     # ---------------------------------------------------------------- 과제 C
-    # 상품은 과제 B 의 36 개와 파일이 다르다 -- QR 타일이 메시에 붙박여 있고, 텍스처와 .usdc 를
-    # 상대경로로 문다(2026-09-06 확인). 그래서 폴더째 옮기고 고쳐 쓰지 않는다. 어느 8 종인지는
-    # build_image.sh 의 KEEP 이 정하고(scripts/taskC/taskC_products.py 와 같은 목록), 여기서는
-    # stage 에 온 폴더를 센다.
+    # 상품은 과제 B 의 36 개와 파일이 다르다 -- QR 타일이 메시에 붙박여 있다. `.usdc` 는 텍스처를
+    # 상대경로로 물지만, `<이름>_phys.usd` 가 `.usdc` 를 무는 방식은 상품마다 달라 8 종 중 5 종은
+    # 수집 저장소 자리인 `/workspace/cyclo_lab/taskC/out/qr_usd/…` **절대 경로**다(2026-09-14 실측;
+    # 09-06 에 "상대경로" 로 본 것은 3 종만 맞았다). 크레이트(바이너리) 파일이라 여기서 고쳐 쓰지
+    # 않고, Dockerfile 이 그 자리를 products_c 로 잇는 링크를 건다. 여기서는 어느 상품이 그 링크에
+    # 기대는지 세어 찍는다 -- 링크가 빠지면 그 상품은 메시·QR 없이 스폰돼 판독이 안 된다.
     qr = f"{RAW}/taskC/out/qr_usd"
     names_c = sorted(d for d in os.listdir(qr) if os.path.isdir(f"{qr}/{d}"))
+    abs_ref = []
     for name in names_c:
         for f in sorted(os.listdir(f"{qr}/{name}")):
             copy(f"{qr}/{name}/{f}", f"{OUT}/products_c/{name}/{f}")
+        phys = f"{qr}/{name}/{name}_phys.usd"
+        if os.path.isfile(phys):
+            with open(phys, "rb") as fh:
+                if b"/workspace/cyclo_lab/taskC/out/qr_usd" in fh.read():
+                    abs_ref.append(name)
+    if abs_ref:
+        print(f"[taskC]    _phys.usd 가 /workspace/cyclo_lab/taskC/out/qr_usd 절대 경로를 무는 상품 "
+              f"{len(abs_ref)} 종: {', '.join(abs_ref)} -- Dockerfile 의 taskC/out/qr_usd 링크가 필요하다")
     for f in ("products.json", "_qr_tiles.json"):
         copy(f"{qr}/{f}", f"{OUT}/products_c/{f}")
     for f in ("taskC_products.json", "taskC_barcodes.json"):
