@@ -84,7 +84,7 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 
 #### 허깅페이스 학습 데이터 직접 재생
 
-동봉된 6편 말고, 주최 측이 공개한 학습 데이터 960편도 틀 수 있습니다.
+동봉된 6편 말고, 주최 측이 공개한 학습 데이터 1,089편도 틀 수 있습니다.
 
 **다만 기록과 똑같이 재생되지는 않습니다.** 접촉과 마찰을 매 스텝 새로 계산하므로 손에 닿는
 순간의 작은 차이가 뒤로 갈수록 벌어져, 편에 따라 상품을 놓치거나 QR 을 못 읽습니다. 로봇이
@@ -100,7 +100,7 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u     /workspace/challenge_scripts/task_c
 편 번호는 데이터셋의 `meta/taskC_episodes.jsonl` 에 있는 `episode_index` 입니다. 그 파일이
 편마다 상품·바코드·등급과 함께 **장면 시드(`seed`)** 를 알려 줍니다.
 
-**장면은 데이터셋이 아니라 이 저장소가 싣습니다.** 960편의 계산대 배치가
+**장면은 데이터셋이 아니라 이 저장소가 싣습니다.** 1,089편의 계산대 배치가
 `scripts/taskC/scenes/<시드>.json` 에 있고, 재생기가 위 `seed` 로 짝을 찾아 장면을 세운 뒤
 parquet 에서 관절 기록을 꺼내 `scripts/taskC/.lerobot_cache/` 에 펼쳐 재생합니다.
 parquet 을 읽으므로 시뮬레이터 쪽 파이썬에 `pyarrow` 가 필요합니다
