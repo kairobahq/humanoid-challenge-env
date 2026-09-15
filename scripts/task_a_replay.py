@@ -227,6 +227,7 @@ from isaaclab.utils import configclass                                # noqa: E4
 from cyclo_lab.assets.robots.FFW_SG2 import FFW_SG2_MOBILE_CFG        # noqa: E402
 
 taskA_colliders = _by_path("taskA_colliders", f"{_TASKA}/taskA_colliders.py")
+taskA_floor_material = _by_path("taskA_floor_material", f"{_TASKA}/taskA_floor_material.py")
 taskA_stools = _by_path("taskA_stools", f"{_TASKA}/taskA_stools.py")
 taskA_robot_pose = _by_path("taskA_robot_pose", f"{_TASKA}/taskA_robot_pose.py")
 
@@ -301,6 +302,8 @@ def main():
     # harden 을 먼저 하면 콜라이더가 이미 없어진 프림에 붙는다.
     taskA_store_dress.dress(stage, STORE_SEED, log=lambda *a: print("[i]", *a, flush=True))
     taskA_colliders.harden(stage, log=lambda *a: None)
+    # 원본 기록이 모인 바닥과 같게: 매장 바닥 콜라이더에 컴플라이언트 재질 (taskA_floor_material.py 머리말).
+    taskA_floor_material.bind_store_floor(stage, log=lambda *a: print("[i]", *a, flush=True))
     stools = taskA_stools.Stools(stage, SEATS, log=lambda *a: None)
     stools.measure_home()
     stools.place(SEAT)
