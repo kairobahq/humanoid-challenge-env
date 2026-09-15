@@ -25,10 +25,13 @@ scripts/taskA/
   taskA_layout.py       목표 진열대와 목표 책상의 위치, 로봇의 시작 자세
   taskA_stools.py       스툴을 로봇 좌석의 반대편으로 이동시키는 로직
   taskA_colliders.py    매장 집기의 충돌체(Collider) 활성화 (원본 USD에는 비활성화되어 있음)
+  taskA_floor_material.py 바퀴와의 충돌로 인한 덜컹거림을 완화하기 위한 soft한 바닥 적용
   taskA_robot_pose.py   로봇의 기립 자세 설정
   eatin_measured.json   원형 탁상(로봇 스폰) 데이터 (좌석 좌표 산출용)
   destinations.json     목적지 및 책상 좌표 데이터
 ```
+
+로봇의 바퀴와 딱딱한 바닥의 충돌로 인해, 로봇이 들고 있는 바구니가 떨어지는 문제가 많이 발생되었습니다. 그래서 이를 수정하기 위해, Task A 한정, 바닥 재질을 더 soft한 바닥으로 변경하였습니다.
 
 여러분의 정책이 마주할 장면이 정확히 어떻게 정해지는지 그 안에
 전부 적혀 있고, `git pull` 로 갱신됩니다.

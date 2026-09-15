@@ -461,6 +461,7 @@ from cyclo_lab.assets.robots.FFW_SG2 import (                         # noqa: E4
 
 # pxr / isaaclab 을 쓰는 셋은 여기서 읽는다 -- AppLauncher 앞에서 읽으면 Isaac Sim 이 뜨지 않는다.
 taskA_colliders = _by_path("taskA_colliders", f"{_TASKA}/taskA_colliders.py")
+taskA_floor_material = _by_path("taskA_floor_material", f"{_TASKA}/taskA_floor_material.py")
 taskA_stools = _by_path("taskA_stools", f"{_TASKA}/taskA_stools.py")
 robot_pose = _by_path("taskA_robot_pose", f"{_TASKA}/taskA_robot_pose.py")
 
@@ -583,6 +584,8 @@ def main():
                             log=lambda *a: print("  ", *a, flush=True))
 
     taskA_colliders.harden(stage, log=lambda *a: None)
+    # 원본 기록이 모인 바닥과 같게: 매장 바닥 콜라이더에 컴플라이언트 재질 (taskA_floor_material.py 머리말).
+    taskA_floor_material.bind_store_floor(stage, log=lambda *a: print("[i]", *a, flush=True))
     # draw_scene() 과 **같은 stool_seed** 여야 한다. 여기서 다른 값을 쓰면 stools.place() 가
     # 놓는 자리와 SCENE 이 기록한 자리가 어긋나고, --scene-json 이 거짓말을 하게 된다.
     seats_all = taskA_seats.seats(stool_seed=args_cli.seed)
