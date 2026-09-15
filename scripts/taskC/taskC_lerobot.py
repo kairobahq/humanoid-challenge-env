@@ -9,7 +9,7 @@
 # parquet 한 장이라 모양이 다르므로 여기서 옮겨 담는다.
 #
 # **장면(상품이 계산대 어디에 놓였나)은 데이터셋에 없다.** 과제 A 가 매장 12판을
-# `taskA/stores/` 에 싣고 있듯, 과제 C 도 960 편의 장면을 `taskC/scenes/<시드>.json` 으로
+# `taskA/stores/` 에 싣고 있듯, 과제 C 도 1,089 편의 장면을 `taskC/scenes/<시드>.json` 으로
 # 저장소에 싣는다. 데이터셋 쪽 `meta/taskC_episodes.jsonl` 이 편마다 `seed` 를 주므로
 # 그 값으로 짝을 찾는다.
 #
@@ -87,7 +87,7 @@ def _parquet_path(root, episode_index):
 
 
 def scene_path(seed, scenes_dir=None):
-    """시드로 장면 JSON 을 찾는다. 저장소에 실린 960 편을 먼저 본다."""
+    """시드로 장면 JSON 을 찾는다. 저장소에 실린 1,089 편을 먼저 본다."""
     p = os.path.join(scenes_dir or SCENES_DIR, "%d.json" % seed)
     return p if os.path.isfile(p) else None
 
