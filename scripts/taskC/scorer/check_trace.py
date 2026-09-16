@@ -97,9 +97,9 @@ def check_qr(sc, de):
         ck("판독은 그림으로: %s" % d.get("slug"), d.get("by") == "image",
            "by=%r -- 기하 판정이 점수로 새어 들어갔다" % (d.get("by"),))
         ck("읽힌 문자열이 있다: %s" % d.get("slug"), bool(d.get("text")))
-    # 판독 창 밖에서 셔터가 눌리지 않았는가. 창은 수집 파이프라인 실측값이다.
-    lim = float(qr.get("lat_max_mm") or 40.0)
-    dlo = float(qr.get("d_min_mm") or 50.0)
+    # 판독 창 밖에서 셔터가 눌리지 않았는가. 기본값은 qr_decode.py 와 같다 (2026-09-16 횡이탈 60 · 축거리 40~150).
+    lim = float(qr.get("lat_max_mm") or 60.0)
+    dlo = float(qr.get("d_min_mm") or 40.0)
     dhi = float(qr.get("d_max_mm") or 150.0)
     for d in recs:
         ck("판독 창 안에서 읽었다: %s" % d.get("slug"),
