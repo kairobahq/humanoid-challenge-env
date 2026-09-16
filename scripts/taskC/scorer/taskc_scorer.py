@@ -152,6 +152,18 @@ class ProductScore:
             self.place.first_t = t
         self.notes.append(f"t={t:.2f} 내려놓음 -- 띠 교차 {'O' if in_band else 'X'}")
 
+    def _settle_grip(self):
+        """헛집기 거르기 (2026-09-16). 모터 부하만으로는 상품 옆면을 누르거나 상판을 짚어도 「쥐었다」가 되고,
+        빈손 닫힘값(q_free_close)을 넣어도 옆면에 걸려 멈추면 통과한다(held-out 폐루프 16판 실측: 들림 0~10 mm
+        인 8판이 전부 2점). 그래서 부하가 걸린 채로 상품이 상판에서 held_clear_m(5 mm) 이상 뜬 적이 한 번도
+        없으면 파지로 인정하지 않는다. 판이 끝난 뒤 점수를 셈할 때 적용하며, 그 뒤 실제로 들리면 래치가 다시
+        선다(update 가 다시 passed 를 세운다). 틱 중(all_five·points)에는 적용하지 않는다 -- 들기 전에 잰 파지가
+        도중에 꺼지면 안 되기 때문이다(selftest 의 (a) 단계)."""
+        if self.grip.passed and not self.ev.get("frames_held"):
+            self.grip.passed = False
+            self.grip.first_t = None
+            self.ev["grip_touch_only"] = True
+
     def points(self) -> float:
         c = self.cfg
         return (c.pts_grip * self.grip.passed + c.pts_lift * self.lift.passed
@@ -164,6 +176,7 @@ class ProductScore:
 
     def explain(self, cfg) -> dict:
         """왜 그렇게 됐는지 -- 실측 숫자로 설명한다. 추측하지 않는다."""
+        self._settle_grip()
         e, out = self.ev, {}
 
         def say(key, latch, ok_msg, fail_msg, na_msg):
@@ -173,7 +186,10 @@ class ProductScore:
         say("sub1_1_grip", self.grip,
             f"모터 부하가 {cfg.grip_load_min_nm:.1f}N·m 이상으로 "
             f"{cfg.grip_hold_s:.1f}초 연속 유지됐다 (최대 {e['max_load_nm']:.1f}N·m)",
-            (f"부하 최대 {e['max_load_nm']:.1f}N·m, 연속 유지 최대 {e['max_grip_run_s']:.2f}초 — "
+            ((f"모터 부하는 걸렸으나(최대 {e['max_load_nm']:.1f}N·m) 쥔 채로 상품이 상판에서 "
+              f"{cfg.held_clear_m*1000:.0f}mm 도 뜨지 않았다 — 옆면을 누르거나 닿기만 한 헛집기로 본다")
+             if e.get("grip_touch_only") else
+             f"부하 최대 {e['max_load_nm']:.1f}N·m, 연속 유지 최대 {e['max_grip_run_s']:.2f}초 — "
              f"기준({cfg.grip_load_min_nm:.1f}N·m / {cfg.grip_hold_s:.1f}초)에 못 미쳤다. "
              + (f"쥐긴 했으나 {cfg.grip_hold_s:.1f}초를 못 채웠다."
                 if e['max_load_nm'] >= cfg.grip_load_min_nm
@@ -226,6 +242,7 @@ class ProductScore:
         return out
 
     def report(self) -> dict:
+        self._settle_grip()
         c = self.cfg
         return {
             "slug": self.slug,
