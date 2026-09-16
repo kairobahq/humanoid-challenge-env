@@ -195,7 +195,7 @@ python3 scripts/taskC/scorer/score_from_trace.py     out/trace/trace.jsonl out/t
 python3 scripts/taskC/scorer/check_trace.py out/trace
 ```
 
-`--q-free-close`는 빈손으로 그리퍼를 끝까지 닫았을 때 관절이 서는 위치이고, 파지 판정이 헛집기를 거르는 데 씁니다. `--measure-q-free`로 한 번 재면 계속 씁니다 — 재는 동안 그리퍼를 열어야 하므로 채점할 판 안에서 재면 안 됩니다.
+`--q-free-close`는 빈손으로 그리퍼를 끝까지 닫았을 때 관절이 서는 위치이고, 파지 판정이 헛집기를 거르는 데 씁니다. `--measure-q-free`로 한 번 재면 계속 씁니다 — 재는 동안 그리퍼를 열어야 하므로 채점할 판 안에서 재면 안 됩니다. 또한 파지(Sub1-1)는 부하가 걸린 채로 상품이 상판에서 5 mm 이상 뜬 적이 있어야 인정됩니다(2026-09-16). 옆면을 누르거나 닿기만 한 접촉은 부하가 걸려도 0점입니다.
 
 #### QR 판독은 스캐너 카메라 이미지로 합니다
 
