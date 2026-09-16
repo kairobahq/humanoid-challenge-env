@@ -42,17 +42,22 @@ class QrReader:
         self.cam = cam
         self.expect = dict(expect_by_slug)
         self._log = log or (lambda m: None)
-        # 판독 창. 수집 파이프라인의 판독 수용 실측값을 그대로 쓴다 -- 횡이탈 40 mm,
-        # 축거리 50~150 mm, 면각 12도, 원뿔 반각 18도(focal 32mm 의 half FOV).
+        # 판독 창. 수집 파이프라인의 판독 수용 실측값은 횡이탈 40 mm · 축거리 50~150 mm · 면각 12도 ·
+        # 원뿔 반각 18도(focal 32mm 의 half FOV)였다. 2026-09-16 에 횡이탈 60 mm · 축거리 40~150 mm ·
+        # 면각 30도로 넓혔다. 창은 "디코드를 시도해도 되는 자리" 일 뿐이고 통과는 기대 바코드가
+        # 실제로 읽혀야 하므로, 넓혀도 거짓 통과는 생기지 않는다. 학습된 정책이 스캐너 앞 72 mm 까지
+        # 가져오고도 면각이 12도를 넘어 한 번도 시도하지 못한 실측(held-out 폐루프)이 계기다.
+        # 원뿔 반각 18도는 스캐너캠 화각이라 그대로 두고, 축거리 상한 150 mm 는 평가 기준(빔 출발선에서
+        # 15 cm)과 같아 그대로 둔다.
         #
         # 한때 시각 인식의 6 mm 를 1.5 배 넓혀 9 mm 로 썼다. 그것은 자리를 잘못 빌린 것이다 --
         # 6 mm 는 LED·자국·띠를 켜는 **시각 판정**의 값이고, 읽어도 되는 자리를 정하는 값이
         # 아니다. 실제 수집분은 횡이탈 35~38 mm 에서 읽혔고(HF 실측), 9 mm 게이트는 그것을
         # 전부 기각한다. 두 값은 목적이 달라 하나로 겸할 수 없다.
-        self.lat_max = float(os.environ.get("TASKC_QR_LAT_MAX", "40"))
-        self.d_min = float(os.environ.get("TASKC_QR_DMIN_MM", "50"))
+        self.lat_max = float(os.environ.get("TASKC_QR_LAT_MAX", "60"))
+        self.d_min = float(os.environ.get("TASKC_QR_DMIN_MM", "40"))
         self.d_max = float(os.environ.get("TASKC_QR_DMAX_MM", "150"))
-        self.face_max = float(os.environ.get("TASKC_QR_FACE_MAX", "12"))
+        self.face_max = float(os.environ.get("TASKC_QR_FACE_MAX", "30"))
         self.cone_half = float(os.environ.get("TASKC_QR_CONE_HALF", "18"))
         # 한 번 읽으면 이만큼 쉰다. 같은 상품을 연달아 읽어 로그가 넘치는 것을 막는다.
         self.cooldown = float(os.environ.get("TASKC_QR_COOLDOWN_S", cooldown_s or 5.0))
