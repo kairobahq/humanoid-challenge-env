@@ -44,6 +44,7 @@ class ScoreConfig:
     # (조준·판독 조건은 모두 물체를 실제로 들고 있을 때만 성립한다 --
     #  다 왼손에서 물체를 들었을 경우에만 해당")
     held_clear_m: float = 0.005
+    grip_held_min_s: float = 0.5        # 파지 인정: 쥔 채 held_clear_m 이상 떠 있는 상태가 이만큼 연속돼야 (쳐서 잠깐 들린 것은 제외)
 
     # Sub 1-2 상판에서 들어올렸는가 (2점)
     lift_clear_m: float = 0.020          # AABB 최저점이 상판보다 20 mm 위
@@ -131,7 +132,7 @@ class ProductScore:
         # 왜 그렇게 됐는지 설명하려면 숫자가 있어야 한다. 매 틱 갱신한다.
         self.ev = dict(max_load_nm=0.0, max_grip_run_s=0.0, max_lift_m=None,
                        min_dist_m=None, frames_near=0, frames_grasped=0,
-                       max_coverage=None, frames_held=0,
+                       max_coverage=None, frames_held=0, held_run_s=0.0, max_held_run_s=0.0,
                        released=False, release_t=None, release_in_band=None,
                        release_pos=None)
         self.notes: list[str] = []
@@ -156,10 +157,11 @@ class ProductScore:
         """헛집기 거르기 (2026-09-16). 모터 부하만으로는 상품 옆면을 누르거나 상판을 짚어도 「쥐었다」가 되고,
         빈손 닫힘값(q_free_close)을 넣어도 옆면에 걸려 멈추면 통과한다(held-out 폐루프 16판 실측: 들림 0~10 mm
         인 8판이 전부 2점). 그래서 부하가 걸린 채로 상품이 상판에서 held_clear_m(5 mm) 이상 뜬 적이 한 번도
-        없으면 파지로 인정하지 않는다. 판이 끝난 뒤 점수를 셈할 때 적용하며, 그 뒤 실제로 들리면 래치가 다시
+        없거나, 떠 있는 상태가 grip_held_min_s(0.5 s) 만큼 연속되지 않으면(쳐서 잠깐 들린 것) 파지로 인정하지
+        않는다. 판이 끝난 뒤 점수를 셈할 때 적용하며, 그 뒤 실제로 들리면 래치가 다시
         선다(update 가 다시 passed 를 세운다). 틱 중(all_five·points)에는 적용하지 않는다 -- 들기 전에 잰 파지가
         도중에 꺼지면 안 되기 때문이다(selftest 의 (a) 단계)."""
-        if self.grip.passed and not self.ev.get("frames_held"):
+        if self.grip.passed and self.ev.get("max_held_run_s", 0.0) < self.cfg.grip_held_min_s:
             self.grip.passed = False
             self.grip.first_t = None
             self.ev["grip_touch_only"] = True
@@ -187,7 +189,8 @@ class ProductScore:
             f"모터 부하가 {cfg.grip_load_min_nm:.1f}N·m 이상으로 "
             f"{cfg.grip_hold_s:.1f}초 연속 유지됐다 (최대 {e['max_load_nm']:.1f}N·m)",
             ((f"모터 부하는 걸렸으나(최대 {e['max_load_nm']:.1f}N·m) 쥔 채로 상품이 상판에서 "
-              f"{cfg.held_clear_m*1000:.0f}mm 도 뜨지 않았다 — 옆면을 누르거나 닿기만 한 헛집기로 본다")
+              f"{cfg.held_clear_m*1000:.0f}mm 이상 떠 있던 시간이 최대 {e.get('max_held_run_s', 0.0):.2f}초로 "
+              f"기준 {cfg.grip_held_min_s:.1f}초에 못 미쳤다 — 옆면을 누르거나 쳐서 잠깐 들린 헛집기로 본다")
              if e.get("grip_touch_only") else
              f"부하 최대 {e['max_load_nm']:.1f}N·m, 연속 유지 최대 {e['max_grip_run_s']:.2f}초 — "
              f"기준({cfg.grip_load_min_nm:.1f}N·m / {cfg.grip_hold_s:.1f}초)에 못 미쳤다. "
@@ -331,6 +334,33 @@ class TaskCScorer:
             return pos - w, pos + w
         return aabb_from_obb(pos, quat, he)
 
+    @staticmethod
+    def _rot(quat):
+        w, x, y, z = (float(v) for v in quat)
+        return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                         [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+
+    def _low_z(self, prod):
+        """상품의 물리적 최저점 z (2026-09-16). 들림·쥠 판정은 이것을 쓴다.
+
+        `_aabb` 는 놓인 자세의 월드 반치수(`aabb_he`)를 중심에 그대로 더하므로, 캔을 밀어 한쪽 모서리를
+        축으로 기울이면 중심이 올라가는 만큼 「들렸다」로 잡힌다(held-out 폐루프 실측: 중심 +10 mm, 실제
+        최저점 +0.5 mm). 회전을 반영한 최저점은 원통이면 축 기울기로 닫힌 식, 상자면 로컬 반치수를
+        현재 회전으로 돌린 꼭짓점 최소값이다. 상자의 로컬 반치수는 `local_he`(딜 자세로 되돌린 값)가 있으면
+        그것을, 없으면 `half_extents` 를 쓴다.
+        """
+        pos, quat, he = self._obb(prod)
+        R = self._rot(quat)
+        if prod["shape"] == "cylinder":
+            ax = R @ np.asarray(prod.get("axis_local", (0, 0, 1)), dtype=float)
+            az = abs(float(ax[2])) / max(float(np.linalg.norm(ax)), 1e-9)
+            drop = float(prod["half_height"]) * az + float(prod["radius"]) * float(np.sqrt(max(0.0, 1.0 - az * az)))
+        else:
+            lhe = np.asarray(prod.get("local_he", he), dtype=float)
+            drop = float(np.abs(R[2, :]) @ lhe)
+        return float(pos[2]) - drop
+
     def _prod_view(self, prod):
         pos, quat, he = self._obb(prod)
         v = dict(prod)
@@ -384,7 +414,7 @@ class TaskCScorer:
             else:
                 if grasped:
                     sc.ev["frames_grasped"] += 1
-                    h = float(amin[2] - self.table_z)
+                    h = float(self._low_z(prod) - self.table_z)   # 최저점 기준 (기울임은 들림이 아니다)
                     sc.ev["max_lift_m"] = h if sc.ev["max_lift_m"] is None else max(sc.ev["max_lift_m"], h)
                 sc.lift.update(bool(grasped)
                                and (amin[2] - self.table_z) > self.cfg.lift_clear_m, dt, t)
@@ -392,9 +422,13 @@ class TaskCScorer:
             # --- 「들려 있는가」 = 쥔 상태 + 상판에서 떠 있음.
             # 이송 중 떨어뜨리면 이 값이 즉시 False 가 되어 지향·판독이 성립하지 않는다.
             held = None if grasped is None else (
-                bool(grasped) and (amin[2] - self.table_z) > self.cfg.held_clear_m)
+                bool(grasped) and (self._low_z(prod) - self.table_z) > self.cfg.held_clear_m)
             if held:
                 sc.ev["frames_held"] = sc.ev.get("frames_held", 0) + 1
+                sc.ev["held_run_s"] = sc.ev.get("held_run_s", 0.0) + dt
+                sc.ev["max_held_run_s"] = max(sc.ev.get("max_held_run_s", 0.0), sc.ev["held_run_s"])
+            else:
+                sc.ev["held_run_s"] = 0.0
 
             # --- 거리 (Sub 2-1 / 2-2 공용 -- 한 번만 계산해 나눠 쓴다)
             d = closest_dist(b0, self._prod_view(prod))
@@ -484,6 +518,7 @@ class TaskCScorer:
                 "grip_load_min_nm": self.cfg.grip_load_min_nm,
                 "grip_stall_margin_rad": self.cfg.grip_stall_margin_rad,
                 "held_clear_m": self.cfg.held_clear_m,
+                "grip_held_min_s": self.cfg.grip_held_min_s,
                 "grip_hold_s": self.cfg.grip_hold_s,
                 "lift_clear_m": self.cfg.lift_clear_m,
                 "aim_dist_m": self.cfg.aim_dist_m,

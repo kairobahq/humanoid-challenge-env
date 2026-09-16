@@ -48,7 +48,12 @@ def build_products(scene, decode_json):
             spec = dict(shape="cylinder", radius=max(he[0], he[1]),
                         half_height=he[2], axis_local=(0, 0, 1))
         else:
-            spec = dict(shape="box", half_extents=tuple(he))
+            # `he` 는 딜 자세의 월드 반치수라, 최저점 계산용 로컬 반치수는 딜 회전을 되돌려 얻는다 (|R0^T| he).
+            w, x, y, z = (float(v) for v in p.get("quat", (1.0, 0.0, 0.0, 0.0)))
+            R0 = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                           [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                           [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+            spec = dict(shape="box", half_extents=tuple(he), local_he=tuple(float(v) for v in (np.abs(R0.T) @ np.asarray(he))))
         # `he` 는 놓인 자세의 **월드 축정렬** 반치수다 -- AABB 에 그대로 쓴다.
         spec.update(slug=p["slug"], aabb_he=tuple(he),
                     expected_code=expected_code(p["slug"]))
