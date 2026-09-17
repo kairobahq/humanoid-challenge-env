@@ -243,6 +243,7 @@ python3 scripts/taskC/scorer/check_trace.py out/trace
 | 증상 | 먼저 확인할 것 |
 | --- | --- |
 | 상품이 **검정 덩어리로 보이거나 아예 안 보이는데** 로봇은 집고 나르며, QR 판독이 0회 | 컨테이너 안에서 `ls -la /workspace/cyclo_lab/taskC/out/qr_usd` — `/workspace/assets/products_c` 로 이어진 링크여야 합니다. 상품 USD 일부가 보이는 메시를 이 절대 경로로 참조하므로, 링크가 없으면 물리 콜라이더만 스폰됩니다. 없으면 이미지를 다시 빌드하거나(`./run/setup.sh`) `ln -s /workspace/assets/products_c /workspace/cyclo_lab/taskC/out/qr_usd` 로 걸어 주십시오. |
+| 로그에 `[QR] zxing-cpp 가 없어 QR 을 읽을 수 없다` 또는 `[QR] 판독 불가: No module named 'zxingcpp'` 가 찍히고 판독이 0회 | 이미지에 QR 디코더(zxing-cpp)가 빠진 것입니다. 저장소를 `git pull` 한 뒤 `./run/setup.sh` 를 다시 실행하면 Dockerfile 의 마지막 pip 단계에서 설치됩니다(빌드 캐시가 있으면 그 단계 이후만 다시 돕니다). 급하면 컨테이너 안에서 `${ISAACLAB_PATH}/_isaac_sim/python.sh -m pip install --no-deps zxing-cpp==3.1.1` 로 임시 설치할 수 있으나, 컨테이너를 새로 만들면 사라집니다. |
 | 채점기가 모든 상품의 판독을 「기대 코드가 나오지 않았다」로 FAIL | 채점기는 기대 바코드를 `taskC/out/qr_usd/<slug>/info.json` 에서 읽습니다. 위와 같은 링크가 있는지, 그리고 **컨테이너 안 `/workspace/cyclo_lab` 에서** 채점을 돌렸는지 확인하십시오(컨테이너 밖·다른 작업 폴더에서는 이 파일을 못 찾습니다). |
 | 재생기 요약의 `띠 안/밖` 과 채점기의 Sub 3 판정이 다르다 | 둘 다 「상품 AABB 가 테이프 바깥선 사각형과 일부라도 겹치면 성립」이 기준입니다. 옛 판 재생기(중심 기준)를 쓰고 있지 않은지 `git log -1 -- scripts/task_c_replay.py` 로 확인하십시오. |
 | 매장 바닥·계산대가 안 보이고 상품만 떠 있다 | 매장 씬 `store/scene/fixture_kit/out/store_scene.usd` 는 같은 폴더의 하위 파일들을 상대 경로로 물어 옵니다. 그 파일 하나만 다른 곳에 링크하면 하위 파일이 안 풀립니다 — 폴더째 있어야 합니다. |
