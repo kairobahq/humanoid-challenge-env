@@ -83,12 +83,24 @@ parser.add_argument("--hz", type=float, default=40.0,
 parser.add_argument("--from_seconds", type=float, default=0.0,
                     help="몇 초 지점부터 볼지. 놓기만 보고 싶을 때 쓴다.")
 parser.add_argument("--list", action="store_true", help="들어 있는 판을 찍고 끝낸다.")
+parser.add_argument("--record", type=str, default=None,
+                    help="재생을 그림으로 남긴다. 카메라 세 대를 달고 프레임마다 PNG 를 쓴다. "
+                         "안 주면 카메라를 달지 않는다 -- 기존 동작 그대로.")
+parser.add_argument("--record_every", type=int, default=1,
+                    help="기록 몇 프레임마다 한 장 남길지. 1 이면 전부.")
+parser.add_argument("--record_w", type=int, default=1280, help="chase 그림 가로.")
+parser.add_argument("--record_h", type=int, default=800, help="chase 그림 세로.")
 parser.add_argument("--as_recorded", action="store_true",
                     help="진열을 **기록이 찍힌 그대로** 짓는다. 기본값은 seed 규칙대로 짓는 것이라 "
                          "`task_a_demo.py --seed N` 과 같은 매장이 나온다. 차이는 화면에 적힌다.")
 AppLauncher.add_app_launcher_args(parser)
 parser.set_defaults(device="cpu")     # 환경 하나뿐이고 물리가 결과를 정하지도 않는다
 args_cli = parser.parse_args()
+
+# 카메라를 달려면 이 깃발이 있어야 한다 -- 없으면 Isaac 이 스폰 자체를 막는다
+# (`task_a_demo.py:79` 가 같은 이유로 켠다).  `--record` 를 안 주면 건드리지 않는다.
+if args_cli.record:
+    args_cli.enable_cameras = True
 
 import numpy as np   # noqa: E402
 
@@ -110,6 +122,24 @@ taskA_store_dress = _by_path("taskA_store_dress", f"{_TASKA}/taskA_store_dress.p
 
 PHYSICS_DT = 1.0 / 120.0
 WHEEL_RADIUS = 0.0864
+
+# 실기 카메라 값의 유일한 출처.  `task_a_demo.py:134-136` 과 같은 방식으로 읽는다 -- 이 모듈은
+# 부를 때만 isaaclab 을 import 하므로 AppLauncher 앞에서 읽어도 된다.
+# `--record` 를 안 주면 읽기만 하고 쓰지 않는다.
+REALCAM = _by_path("FFW_SG2_REAL_cameras", os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "FFW_SG2_REAL_cameras.py"))
+head_camera_cfg, wrist_camera_cfg = REALCAM.head_camera_cfg, REALCAM.wrist_camera_cfg
+
+# 찍을 카메라.  **chase(3 인칭 추적)가 기본이다** -- 사용자 지시 2026-09-18.  로봇에 붙은
+# 1 인칭 세 대로는 집게와 바구니의 관계를 밖에서 볼 수 없다.
+#
+# chase 의 자리는 우리 대회 환경 저장소 `Task-A/sim/film_views.py` 의 값을 **그대로** 옮겼다.
+# 그 파일이 "기존 영상 전부가 이 시점이다. 숫자를 고치지 말 것" 이라고 못 박아 두었고, 지금
+# 만드는 영상이 그것들과 나란히 비교될 수 있어야 한다.
+#   눈    로봇 뒤 2.6 m, 높이 2.0 m
+#   보는 곳 로봇 앞 0.8 m, 높이 0.90 m (몸통)
+CHASE_BACK, CHASE_UP, CHASE_FWD, CHASE_LOOK_Z = 2.6, 2.0, 0.8, 0.90
+RECORD_CAMS = ("chase",)
 
 
 # ---- 기록을 Isaac 보다 먼저 읽는다 (씬을 무엇으로 지을지가 여기서 정해진다) ------------------
@@ -158,6 +188,19 @@ BASEJ = np.asarray(_z["base_joints"], dtype=np.float64)         # (T, 6)
 BASE = np.asarray(_z["base"], dtype=np.float64)                 # (T, 3)  x, y, yaw
 CRATE = np.asarray(_z["obj/crate"], dtype=np.float64)           # (T, 7)
 SEG = np.asarray(_z["segment"], dtype=np.int64)                 # (T,)
+# **베이스 높이.** `base` 열은 x, y, yaw 셋뿐이라 높이가 없다. 그래서 예전에는 재생기가 바퀴를
+# 바닥에 맞추는 물리 두 스텝으로 z 를 직접 만들었다. 그것이 틀린다 -- 수집은 하중에 눌린 물렁한
+# 바닥(`taskA_floor_material`)에서 찍혔고 두 스텝으로는 그만큼 안 눌린다. 실측으로 기록의
+# 높이가 1.3718, 두 스텝이 만드는 값이 1.4289 로 **57.1 mm** 차이였다.
+#
+# 그 57 mm 가 로봇만 띄운다. 바구니는 `obj/crate` 의 **절대 좌표**에 박히므로 따라오지 않고,
+# 화면에서는 집게가 닫힌 채 바구니 위 허공에 있는 그림이 된다.
+#
+# 정답은 같은 파일 안에 있다 -- `score/base_pos` 의 z 가 수집 당시의 루트 링크 높이다
+# (`place()` 가 쓰는 z 와 `spawn_pose()` 가 돌려주는 z 가 둘 다 같은 양이다).
+# 없는 기록은 옛 방식으로 떨어진다 -- 채점용 열이 없는 npz 도 재생만은 되어야 한다.
+BASE_Z = (np.asarray(_z["score/base_pos"], dtype=np.float64)[:, 2]
+          if "score/base_pos" in _z.files else None)
 _z.close()
 NFRAMES = JOINTS.shape[0]
 SEG_NAMES = list(META["segment_names"])
@@ -222,6 +265,7 @@ import torch                                                          # noqa: E4
 import isaaclab.sim as sim_utils                                      # noqa: E402
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg              # noqa: E402
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg      # noqa: E402
+from isaaclab.sensors import CameraCfg                                # noqa: E402
 from isaaclab.utils import configclass                                # noqa: E402
 
 from cyclo_lab.assets.robots.FFW_SG2 import FFW_SG2_MOBILE_CFG        # noqa: E402
@@ -263,6 +307,27 @@ class World(InteractiveSceneCfg):
     robot = FFW_SG2_MOBILE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     def __post_init__(self):
+        # ---- 카메라는 `--record` 일 때만 단다 -------------------------------------------------
+        #
+        # 이 재생기가 원래 카메라를 안 다는 이유는 위 docstring 에 있다 -- 세 대를 달면 한 판이
+        # 몇 배 느려지고, 재생은 화면으로 보는 것이지 정책 관측을 만드는 것이 아니다.  그 판단을
+        # 뒤집지 않고 **필요할 때만** 켜지는 곁길을 낸다.  `--record` 를 안 주면 여기는 통째로
+        # 건너뛰고 기존 실행은 글자 그대로 같다.
+        #
+        # 선언은 `task_a_demo.py:507-521` 을 그대로 베꼈다 (53 절: 명령줄만 베끼면 그 파일이
+        # 밟아 온 지뢰 목록을 버리는 것이다).  `update_period` 가 큰 것도 그대로다 -- 카메라가
+        # 스스로 갱신하지 않게 두고, 찍고 싶은 순간에만 강제로 다시 그리게 한다.
+        if args_cli.record:
+            # **자유 시점(chase) 한 대.**  로봇에 붙는 1 인칭이 아니라 밖에서 따라다니는 카메라라
+            # 집게와 바구니의 관계가 보인다.  선언 값은 우리 대회 환경 저장소
+            # `Task-A/sim/chain_film.py:242-245` 를 그대로 옮겼다 -- 기존 영상 전부가 이 렌즈다.
+            self.chase = CameraCfg(
+                prim_path="/World/ChaseCam", update_period=0.0,
+                height=args_cli.record_h, width=args_cli.record_w, data_types=["rgb"],
+                spawn=sim_utils.PinholeCameraCfg(
+                    focal_length=18.0, focus_distance=400.0,
+                    horizontal_aperture=20.955, clipping_range=(0.05, 60.0)))
+
         self.basket = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Basket",
             spawn=sim_utils.UsdFileCfg(usd_path=taskA_layout.BASKET_USD,
@@ -361,17 +426,36 @@ def main():
     # 로봇이 90 도 옆으로 눕는다 (`taskA_robot_pose.py` 머리말의 실측). 로봇이 실제로 서서
     # 생긴 쿼터니언을 읽어 두고, 그것을 세계의 수직축으로 돌린다.
     spawn_quat, spawn_z = taskA_robot_pose.spawn_pose(robot, scene.env_origins[0])
-    z_ground = spawn_z
-    for _ in range(2):
+
+    # `place()` 는 받은 z 에 `env_origin` 을 더하고, `score/base_pos` 는 월드 좌표다.
+    # 환경이 하나뿐이라 지금은 0 이지만, 0 이 아닐 때 조용히 틀리지 않도록 빼고 넣는다.
+    _oz = float(scene.env_origins[0][2].item())
+
+    if BASE_Z is not None:
+        # **기록된 높이를 쓴다** (위 BASE_Z 주석 참조). 바퀴를 바닥에 맞추지 않는다 --
+        # 맞추면 수집 때 눌려 있던 만큼을 잃고 로봇이 57 mm 떠오른다.
+        z_ground = float(BASE_Z[0]) - _oz
         taskA_robot_pose.place(robot, scene.env_origins[0], BASE[0, :2], float(BASE[0, 2]),
                                spawn_quat, z_ground)
         sim.step(render=False)
         scene.update(PHYSICS_DT)
-        low = robot.data.body_pos_w[0, [i for i, n in enumerate(robot.body_names)
-                                        if "wheel_drive_link" in n], 2].min().item()
-        z_ground += WHEEL_RADIUS - (low - scene.env_origins[0][2].item())
-    tilt, _up = taskA_robot_pose.tilt_degrees(robot)
-    print(f"[i] 로봇 기울기 {tilt:.1f}도, 바퀴 높이 맞춤 z {z_ground:.4f}", flush=True)
+        tilt, _up = taskA_robot_pose.tilt_degrees(robot)
+        print(f"[i] 로봇 기울기 {tilt:.1f}도, 베이스 높이는 **기록값**을 쓴다 "
+              f"(첫 프레임 z {z_ground:.4f}, 폭 "
+              f"{(BASE_Z.max() - BASE_Z.min()) * 1000.0:.1f} mm)", flush=True)
+    else:
+        z_ground = spawn_z
+        for _ in range(2):
+            taskA_robot_pose.place(robot, scene.env_origins[0], BASE[0, :2], float(BASE[0, 2]),
+                                   spawn_quat, z_ground)
+            sim.step(render=False)
+            scene.update(PHYSICS_DT)
+            low = robot.data.body_pos_w[0, [i for i, n in enumerate(robot.body_names)
+                                            if "wheel_drive_link" in n], 2].min().item()
+            z_ground += WHEEL_RADIUS - (low - scene.env_origins[0][2].item())
+        tilt, _up = taskA_robot_pose.tilt_degrees(robot)
+        print(f"[i] 로봇 기울기 {tilt:.1f}도, 기록에 높이가 없어 **바퀴로 맞춘다** "
+              f"z {z_ground:.4f} -- 바구니가 뜰 수 있다", flush=True)
 
     zero_qd = torch.zeros((1, len(here)), device=sim.device)
     zero_v6 = torch.zeros((1, 6), device=sim.device)
@@ -388,8 +472,13 @@ def main():
         for slot, src, col in plan:
             q[0, slot] = float(jj[col] if src == "j" else bb[col])
         robot.write_joint_state_to_sim(q, zero_qd)
+        # 높이도 **프레임마다** 쓴다. 기록의 z 는 상수가 아니다 -- 주행 중 바닥이 눌리는 정도가
+        # 변해서 한 판 안에서 서로 다른 값이 수십 개 나온다. 0 번 프레임으로 상수를 만들면
+        # 그 변화를 잃는다.
+        zz = (z_ground if BASE_Z is None
+              else float(BASE_Z[i] + (BASE_Z[k] - BASE_Z[i]) * t) - _oz)
         taskA_robot_pose.place(robot, scene.env_origins[0], bp[:2], float(bp[2]),
-                               spawn_quat, z_ground)
+                               spawn_quat, zz)
         # 바구니는 기록된 자세를 그대로. 쿼터니언은 선형으로 섞고 다시 정규화한다.
         pose = cp.copy()
         if t != 0.0:
@@ -403,6 +492,49 @@ def main():
             torch.as_tensor(pose[None, :], dtype=torch.float32, device=sim.device))
         basket.write_root_velocity_to_sim(zero_v6)
         scene.write_data_to_sim()
+
+    # ---- `--record` -- 프레임을 그림으로 남긴다 ------------------------------------------------
+    #
+    # 카메라는 `update_period` 가 커서 **스스로 갱신하지 않는다.**  한 장을 원하면 낡았다고
+    # 표시하고 강제로 다시 그리게 한다 -- `task_a_demo.py:759-760` 이 하는 그대로다.
+    #
+    # 폴더는 `RECORD_CAMS` 대로 만든다 -- 지금은 `chase` 하나뿐이지만, 나중에 시점을 더해도
+    # 만드는 곳과 찍는 곳이 같은 목록을 보게 두려는 것이다.
+    _rec_dir = args_cli.record
+    _rec_every = max(1, args_cli.record_every)
+    _rec_n = [0]
+    if _rec_dir:
+        for _c in RECORD_CAMS:
+            os.makedirs(os.path.join(_rec_dir, _c), exist_ok=True)
+        from PIL import Image as _Image
+
+    def _shoot(i, t):
+        """기록 프레임 i 를 chase 시점으로 남긴다. `--record` 가 없으면 아무것도 안 한다."""
+        if not _rec_dir or t != 0.0 or (i % _rec_every):
+            return
+        # 로봇이 지금 있는 자리에서 눈과 시선을 만든다 -- `film_views.eye_look("chase", ...)` 와
+        # 같은 산식이다 (뒤 2.6 m · 위 2.0 m 에서 진행 방향 0.8 m 앞, 몸통 높이 0.90 m 를 본다).
+        bx, by, byaw = float(BASE[i, 0]), float(BASE[i, 1]), float(BASE[i, 2])
+        ox, oy, oz = (float(scene.env_origins[0][k].item()) for k in range(3))
+        a = byaw + math.pi
+        eye = [bx + CHASE_BACK * math.cos(a) + ox,
+               by + CHASE_BACK * math.sin(a) + oy, CHASE_UP + oz]
+        look = [bx + CHASE_FWD * math.cos(byaw) + ox,
+                by + CHASE_FWD * math.sin(byaw) + oy, CHASE_LOOK_Z + oz]
+        cam = scene["chase"]
+        cam.set_world_poses_from_view(
+            torch.tensor([eye], dtype=torch.float32, device=sim.device),
+            torch.tensor([look], dtype=torch.float32, device=sim.device))
+        # **렌더를 두 번 민다.**  RTX 는 비동기라 한 번으로는 방금 옮긴 자세가 그림에 안 들어온다.
+        # 한 번만 밀었을 때의 실측 기록: 로봇이 10 m 를 달리는 동안 프레임 간 평균 절대차가
+        # 0.15~0.83(잡음 수준)이었다 -- 화면이 얼어 있었다.
+        sim.render()
+        sim.render()
+        cam._is_outdated[:] = True
+        cam.update(PHYSICS_DT, force_recompute=True)
+        rgb = cam.data.output["rgb"][0][..., :3].cpu().numpy().astype(np.uint8)
+        _Image.fromarray(rgb).save(os.path.join(_rec_dir, "chase", "%06d.png" % i))
+        _rec_n[0] += 1
 
     start = max(0, min(NFRAMES - 1, int(args_cli.from_seconds * FPS)))
     sub = max(1, args_cli.substeps)
@@ -446,6 +578,7 @@ def main():
         put(i, t)
         sim.step(render=True)
         scene.update(PHYSICS_DT)
+        _shoot(i, t)
         if period:
             late = t0 + n * period - time.time()
             if late > 0:
