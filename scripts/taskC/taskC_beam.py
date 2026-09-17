@@ -10,7 +10,6 @@
 #     [RPL] V4-318 각뿔대 빔: 개구 11.5x2.4mm · 반각 11.94/0.881도 · 사거리 30cm
 #     [RPL] V4-70 빔 자국 준비: samyang_buldak_cup 삼각형 26198개 -> /World/envs/env_0/P_0/BeamHit
 #     [RPL] v5-3c 빔 시트 빨강 [0.44, 0.03, 0.03] 점멸(주기 6 듀티 0.50 방식 collapse)
-#            · 인식 = 횡이탈<=6mm 거리 50~250mm 면cos>=0.50 3프레임 -> LED + 테두리 300프레임
 #
 # 기록판에는 **점군(V4-323)도 막대(V4-302)도 BeamViz 도 없다.** 그 셋은 경로를 보여주는
 # 디버그 표시라 기록 때 꺼져 있었다. 그래서 여기에도 넣지 않는다 -- 상품 표면에 붙는 면 하나뿐이다.
@@ -34,7 +33,7 @@ def _noop(*_a, **_k):
 
 
 def load_tiles():
-    """품목별 QR 타일의 상품 로컬 위치·법선. 범위 인식이 이걸 기준으로 판정한다."""
+    """품목별 QR 타일의 상품 로컬 위치·법선. 판독기가 이걸로 QR 까지의 거리를 잰다."""
     with open(TILES_JSON, encoding="utf-8") as f:
         return json.load(f)
 
@@ -286,7 +285,7 @@ class BeamSheet:
     def update(self, o, d, right, up, frame):
         """빔 원점·방향(**상품 로컬 좌표**)을 받아 자국을 다시 그린다.
 
-        반환값은 사각형 개수. 0 이면 자국이 없다(범위 인식의 조건 중 하나다).
+        반환값은 사각형 개수. 0 이면 자국이 없다 -- 빔이 상품에 닿지 않았다는 뜻이고, 판독기는 그때 읽지 않는다.
         """
         from pxr import Gf, UsdGeom
         ors, dirs = self._rays(o, d, right, up)
@@ -341,90 +340,29 @@ class BeamSheet:
 
 
 class Recognizer:
-    """v5-3c 범위 인식. 빔이 QR 타일을 제대로 겨눈 순간을 기하로 판정한다.
+    """지금 대상 상품의 QR 타일 자세와, 인식 표시(초록 LED · 빨간 테두리)를 켜 두는 시간을 들고 있다.
 
-    영상 디코드가 아니다 -- 수집 파이프라인도 같은 판정으로 LED 와 테두리를 켠다
-    (`V4-194d 기하 판독`). 세 조건이 `n` 프레임 연속 성립하면 한 번 발화하고,
-    조건이 풀려야 다시 무장한다.
+    인식 여부는 여기서 정하지 않는다 -- 스캐너 카메라가 기대 코드를 실제로 읽었을 때만 인식이다
+    (`scorer/qr_decode.py`). 기하 조건으로 인식을 정하는 방식은 양산(수집) 파이프라인에만 있다.
     """
 
     def __init__(self, tiles, log=None):
         self._tiles = tiles
         self._log = log or _noop
-        # 횡이탈 한계. **수집 파이프라인과 같은 6 mm 다.** 아래 넷도 모두 같은 값이라
-        # 판정이 수집 때와 수치적으로 일치한다.
-        #
-        # 한때 15 mm 로 넓혀 두었다. 팔이 GT 보다 처져 상품이 그리퍼 안에서 다른 자세로
-        # 물리는 바람에 6 mm 로는 발화가 4 회에서 2 회로 줄었기 때문이다. 그 처짐은 팔 강성
-        # 이중 계상이 뿌리였고(재생기 31절), 잡고 나서는 넓힐 까닭이 없어 되돌렸다.
-        #
-        # 2026-09-11: 6 mm 를 **판독 창과 같은 40 mm** 로 맞춘다(사용자 지시). 두 잣대가
-        # 어긋나 있어서, 판독이 성립한 판에서도 띠가 회색으로 남았다. 밀 실측 세 판의
-        # 횡이탈이 11.0 · 13.1 · 24.4 mm 로 판독 창(40 mm) 안이면서 시각 문턱(6 mm) 밖이었다.
-        # 학습 데이터에 "읽혔는데 띠가 안 켜진 장면" 이 남는 것을 막는다.
-        self._r_mm = float(os.environ.get("TASKC_RECOG_R_MM", "40"))
-        self._d_min = float(os.environ.get("TASKC_RECOG_D_MIN_MM", "50"))
-        self._d_max = float(os.environ.get("TASKC_RECOG_D_MAX_MM", "250"))
-        self._face = float(os.environ.get("TASKC_RECOG_FACE", "0.5"))
-        self._n = max(1, int(os.environ.get("TASKC_RECOG_N", "3")))
         # 기록판은 물리 120 Hz 를 4 걸음마다 한 프레임으로 남긴다 -> 10 초 = 300 프레임.
         self._hold = int(round(float(os.environ.get("TASKC_SHEET_HIT_S", "10")) * 30.0))
         self._slot = None
-        self._cnt = 0
-        self._until = -1
-        self._armed = True
-        self._n_hit = 0
-        self._log("v5-3c 범위 인식 = 횡이탈<=%.0fmm 거리 %.0f~%.0fmm 면cos>=%.2f %d프레임"
-                  " -> LED + 테두리 %d프레임"
-                  % (self._r_mm, self._d_min, self._d_max, self._face, self._n, self._hold))
 
     def set_slot(self, slot, slug):
-        """슬롯(대상 물체)이 바뀌면 타일을 갈고 인식을 재무장한다 (v5-3e)."""
+        """슬롯(대상 물체)이 바뀌면 타일을 간다."""
         if self._slot == int(slot):
             return
         t = self._tiles[slug]
         self._tpos = np.asarray(t["pos"], dtype=float)
         self._tnrm = np.asarray(t["normal"], dtype=float)
         self._slot = int(slot)
-        self._cnt = 0
-        self._until = -1
-        self._armed = True
-        self._log("v5-3e 슬롯 %d(%s) 타일 갱신 -- 인식 재무장" % (int(slot), slug))
+        self._log("슬롯 %d(%s) 타일 갱신" % (int(slot), slug))
 
     def tile_world(self, prod_pos, prod_rot):
-        """지금 대상 타일의 세계 좌표 (중심, 법선). 판독기가 판독 창을 재는 데 쓴다.
-
-        시각 인식(`step`)과 판독 창은 한계값이 다르다 -- 여기서는 타일 자세만 넘기고,
-        어느 자리를 읽어도 되는지는 판독기가 자기 값으로 정한다.
-        """
+        """지금 대상 타일의 세계 좌표 (중심, 법선). 판독기가 거리를 재는 데 쓴다."""
         return prod_pos + prod_rot @ self._tpos, prod_rot @ self._tnrm
-
-    def step(self, b0, bd, prod_pos, prod_rot, n_quads, frame):
-        """한 프레임. `(지금 켜져 있나, 이번에 새로 발화했나)` 를 돌려준다.
-
-        `b0`/`bd` 는 세계 좌표의 빔 원점·방향, `prod_rot` 은 상품의 3x3 회전이다.
-        """
-        tw = prod_pos + prod_rot @ self._tpos
-        tn = prod_rot @ self._tnrm
-        v = tw - b0
-        al = float(v @ bd)
-        lat = float(np.linalg.norm(v - bd * al)) * 1000.0
-        ok = (lat <= self._r_mm
-              and self._d_min <= al * 1000.0 <= self._d_max
-              and float(tn @ (-bd)) >= self._face
-              and n_quads > 0)
-        self._cnt = (self._cnt + 1) if ok else 0
-        lit = int(frame) < int(self._until)
-        fired = False
-        if (not lit) and self._cnt >= self._n and self._armed:
-            self._until = int(frame) + self._hold
-            self._armed = False
-            self._n_hit += 1
-            lit = True
-            fired = True
-            self._log("v5-3 범위 인식 #%d f%d 횡이탈 %.1fmm 거리 %.0fmm"
-                      " -> 초록 LED + 테두리 빨강 %d프레임"
-                      % (self._n_hit, int(frame), lat, al * 1000.0, self._hold))
-        if (not lit) and (not ok):
-            self._armed = True
-        return lit, fired

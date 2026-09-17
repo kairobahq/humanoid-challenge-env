@@ -92,10 +92,10 @@ def main(trace_path, scene_path, decode_path, out_path=None):
     # 판독 성공은 **슬롯별로** 본다. 한 상품이 읽혔다고 다른 상품까지 읽힌 것이 아니다.
     decoded_slugs = set()
     decoded_text = {}      # 슬러그 -> 스캐너캠에서 실제로 읽힌 문자열
-    decoded_by = {}        # 슬러그 -> "image" | "geometry"
+    decoded_by = {}        # 슬러그 -> "image"
     for d in dec.get("decode", []):
-        if not d.get("ok"):
-            continue
+        if not d.get("ok") or d.get("by", "image") != "image" or d.get("text") is None:
+            continue                    # 스캐너캠이 실제로 읽은 기록만 점수가 된다
         if d.get("slug"):
             sg = d["slug"]
         elif d.get("slot") is not None and 0 <= int(d["slot"]) < len(slugs):
@@ -103,7 +103,7 @@ def main(trace_path, scene_path, decode_path, out_path=None):
         else:
             sg = slugs[0]
         decoded_slugs.add(sg)
-        decoded_by[sg] = d.get("by", "geometry")
+        decoded_by[sg] = "image"
         if d.get("text") is not None:
             decoded_text[sg] = str(d["text"])
     decoded_ok = bool(decoded_slugs)
@@ -152,11 +152,7 @@ def main(trace_path, scene_path, decode_path, out_path=None):
         # **거리·파지 조건은 채점기가 다시 판정한다**(평가안: 우리 조건으로 거른다).
         if slug != target_of(cur()) or slug not in decoded_slugs:
             return None
-        if slug in decoded_text:
-            return decoded_text[slug]
-        # 그림 판독을 끄고 돌린 판(기하 판정만)이다. 읽힌 문자열이 없으니 대조할 것이
-        # 없어 기대 코드를 그대로 준다. 요약의 `decoded_by` 에 그렇게 적힌다.
-        return next((sp["expected_code"] for sp in specs if sp["slug"] == slug), None)
+        return decoded_text.get(slug)
 
 
     def _obb_corners(pos, quat, he):

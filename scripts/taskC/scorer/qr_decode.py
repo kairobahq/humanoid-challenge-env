@@ -6,9 +6,9 @@
 #
 # 매 프레임 읽지 않는다. 렌더가 비싸고, 실물 스캐너도 늘 읽고 있지 않다.
 #
-#     1  판독 창       수집 파이프라인의 판독 수용 실측값 안에 들어와야 다음으로 간다
+#     1  판독 시작     빨간 빔이 대상 상품에 닿아 있고 빔 출발선에서 QR 타일까지 18 cm 이내 (2026-09-18)
 #     2  이미지 판독   그 프레임만 스캐너캠을 렌더해 디코드한다
-#     3  냉각          한 번 읽히면 5 초 동안 판독기를 끈다. 게이트를 벗어나도 끈다
+#     3  인식 후       기대 코드가 읽히면 1 초만 더 읽고 끈다. 빔이 떨어졌다 다시 닿거나 대상이 바뀌면 다시 켠다
 #
 # 카메라 사양은 수집 파이프라인의 `ScanCam` 을 그대로 옮겼다(QR-136): 800x500,
 # focal 31.43 mm, 조리개 20.955 / 13.097 mm. 방출점 15 cm 에서 가로 8 x 세로 5 cm 를
@@ -19,7 +19,9 @@ import os
 __all__ = ["SCAN_CAM", "QrReader", "scan_cam_cfg"]
 
 # (폭, 높이, 초점거리 mm, 가로조리개 mm, 세로조리개 mm, 눈 거리 m, 겨눔 거리 m)
-SCAN_CAM = (800, 500, 31.43, 20.955, 13.097, 0.03, 0.30)
+# 2026-09-18: 화각을 30% 넓혔다 (조리개 20.955 x 13.097 -> 27.2415 x 17.0261 mm, 초점거리는 그대로).
+# 방출점 15 cm 에서 가로 10.4 x 세로 6.5 cm 를 본다. 세로 시야가 좁아 빔보다 2~3 cm 높게 든 제시가 잘리던 것을 줄인다.
+SCAN_CAM = (800, 500, 31.43, 27.2415, 17.0261, 0.03, 0.30)
 
 
 def scan_cam_cfg():
@@ -35,36 +37,20 @@ def scan_cam_cfg():
 
 
 class QrReader:
-    """게이트를 넘긴 프레임에서만 스캐너캠을 읽는다."""
+    """빨간 빔이 대상 상품에 닿아 있고 QR 까지 18 cm 이내인 프레임에서만 스캐너캠을 읽는다."""
 
-    def __init__(self, cam, expect_by_slug, log=None,
-                 cooldown_s=None, render_n=None):
+    def __init__(self, cam, expect_by_slug, log=None, render_n=None):
         self.cam = cam
         self.expect = dict(expect_by_slug)
         self._log = log or (lambda m: None)
-        # 판독 창. 수집 파이프라인의 판독 수용 실측값은 횡이탈 40 mm · 축거리 50~150 mm · 면각 12도 ·
-        # 원뿔 반각 18도(focal 32mm 의 half FOV)였다. 2026-09-16 에 횡이탈 60 mm · 축거리 40~150 mm ·
-        # 면각 30도로 넓혔다. 창은 "디코드를 시도해도 되는 자리" 일 뿐이고 통과는 기대 바코드가
-        # 실제로 읽혀야 하므로, 넓혀도 거짓 통과는 생기지 않는다. 학습된 정책이 스캐너 앞 72 mm 까지
-        # 가져오고도 면각이 12도를 넘어 한 번도 시도하지 못한 실측(held-out 폐루프)이 계기다.
-        # 원뿔 반각 18도는 스캐너캠 화각이라 그대로 두고, 축거리 상한 150 mm 는 평가 기준(빔 출발선에서
-        # 15 cm)과 같아 그대로 둔다.
-        #
-        # 한때 시각 인식의 6 mm 를 1.5 배 넓혀 9 mm 로 썼다. 그것은 자리를 잘못 빌린 것이다 --
-        # 6 mm 는 LED·자국·띠를 켜는 **시각 판정**의 값이고, 읽어도 되는 자리를 정하는 값이
-        # 아니다. 실제 수집분은 횡이탈 35~38 mm 에서 읽혔고(HF 실측), 9 mm 게이트는 그것을
-        # 전부 기각한다. 두 값은 목적이 달라 하나로 겸할 수 없다.
-        self.lat_max = float(os.environ.get("TASKC_QR_LAT_MAX", "60"))
-        self.d_min = float(os.environ.get("TASKC_QR_DMIN_MM", "40"))
-        self.d_max = float(os.environ.get("TASKC_QR_DMAX_MM", "150"))
-        self.face_max = float(os.environ.get("TASKC_QR_FACE_MAX", "30"))
-        self.cone_half = float(os.environ.get("TASKC_QR_CONE_HALF", "18"))
-        # 한 번 읽으면 이만큼 쉰다. 같은 상품을 연달아 읽어 로그가 넘치는 것을 막는다.
-        self.cooldown = float(os.environ.get("TASKC_QR_COOLDOWN_S", cooldown_s or 5.0))
         # 판독 직전 RTX 를 수렴시키는 렌더 횟수. 적으면 얼룩진 그림을 읽는다.
         self.render_n = int(os.environ.get("TASKC_QR_RENDER_N", render_n or 8))
+        # 판독 시작 기준: 빨간 빔이 대상 상품에 닿아 있고, 빔 출발선에서 QR 타일까지의 직선거리가 이 값 이내.
+        self.gate_dmax = float(os.environ.get("TASKC_QR_GATE_DMAX_MM", "180"))
+        # 기대 코드가 읽힌 뒤 이만큼만 더 읽고 끈다. 빔이 상품에서 떨어지거나 대상이 바뀌면 다시 켜진다.
+        self.keep_s = float(os.environ.get("TASKC_QR_KEEP_S", "1.0"))
+        self._armed, self._stop_at, self._slug = True, None, None
         self.events = []
-        self._off_until = -1.0      # 이 시각까지는 끈다
         self._tries = 0
         # zxing 이 없으면 판독이 조용히 0점이 된다. 시작할 때 한 번 시험해 크게 알린다 (판독 동작은 그대로다).
         try:
@@ -76,25 +62,19 @@ class QrReader:
                       "./run/setup.sh 로 이미지를 다시 빌드하거나, 컨테이너 안에서 "
                       "`${ISAACLAB_PATH}/_isaac_sim/python.sh -m pip install --no-deps zxing-cpp==3.1.1` 을 실행하라." % (e,))
 
-    def in_window(self, b0, bd, tile_pos, tile_nrm):
-        """읽어도 되는 자리인가. `(들어왔나, 횡이탈mm, 축거리mm)`.
+    def in_range(self, b0, bd, tile_pos, n_quads):
+        """지금 프레임에 판독을 시도하나. `(시도하나, 횡이탈mm, 축거리mm)`.
 
-        수집 파이프라인의 판독 수용 조건 넷을 그대로 본다 -- 빔 축에서의 횡이탈,
-        빔 출발선에서의 축거리, 타일 면이 빔을 마주 본 각, 그리고 스캐너 화각.
+        조건은 둘이다 -- 빨간 빔이 대상 상품에 닿아 있고(자국 사각형 1개 이상), 빔 출발선에서 QR 타일까지의
+        직선거리가 `gate_dmax`(18 cm) 이내. 읽히는지는 그림이 정한다. 횡이탈 · 축거리는 기록용으로만 돌려준다.
         """
-        import math
         import numpy as np
         v = np.asarray(tile_pos, dtype=float) - np.asarray(b0, dtype=float)
         d = np.asarray(bd, dtype=float)
         al = float(v @ d)
         lat = float(np.linalg.norm(v - d * al)) * 1000.0
-        dist = al * 1000.0
-        n = np.asarray(tile_nrm, dtype=float)
-        face = math.degrees(math.acos(max(-1.0, min(1.0, float(n @ (-d))))))
-        cone = math.degrees(math.atan2(lat, max(dist, 1e-6)))
-        ok = (lat <= self.lat_max and self.d_min <= dist <= self.d_max
-              and face <= self.face_max and cone <= self.cone_half)
-        return ok, lat, dist
+        ok = bool(n_quads) and float(np.linalg.norm(v)) * 1000.0 <= self.gate_dmax
+        return ok, lat, al * 1000.0
 
     def _place(self, sim, b0, bd):
         import torch
@@ -108,7 +88,14 @@ class QrReader:
 
     def try_read(self, sim, b0, bd, slug, t, in_gate):
         """게이트 안이면 한 프레임 읽는다. 읽히면 `(코드, 맞았나)`, 아니면 None."""
-        if self.cam is None or not in_gate or t < self._off_until or not self._zx_ok:
+        if self.cam is None or not self._zx_ok:
+            return None
+        if slug != self._slug or not in_gate:          # 대상이 바뀌었거나 빔이 떨어졌다 -> 다시 켠다
+            self._slug, self._armed, self._stop_at = slug, True, None
+        if not in_gate or not self._armed:
+            return None
+        if self._stop_at is not None and t > self._stop_at:
+            self._armed = False                        # 인식 뒤 keep_s 가 지났다 -> 끈다
             return None
         try:
             import numpy as np
@@ -124,10 +111,12 @@ class QrReader:
                 return None
             text = res[0].text
             ok = bool(text and text == self.expect.get(slug))
-            self._off_until = t + self.cooldown
             self.events.append(dict(ok=ok, slug=slug, t=round(float(t), 3), text=text))
-            self._log("[QR] %s %s (%s)  -- %.0f초 쉼"
-                      % (slug, "판독 O" if ok else "다른 값", text, self.cooldown))
+            if ok and self._stop_at is None:
+                self._stop_at = t + self.keep_s
+                self._log("[QR] %s 판독 O (%s)  -- %.0f초 더 읽고 끈다" % (slug, text, self.keep_s))
+            elif not ok:
+                self._log("[QR] %s 다른 값 (%s)" % (slug, text))
             return (text, ok)
         except Exception as e:
             self._log("[QR] 판독 불가: %r" % (e,))
@@ -135,6 +124,4 @@ class QrReader:
 
     def report(self):
         return {"decode": self.events, "tries": self._tries, "zxing": bool(self._zx_ok),
-                "lat_max_mm": self.lat_max, "d_min_mm": self.d_min,
-                "d_max_mm": self.d_max, "face_max_deg": self.face_max,
-                "cone_half_deg": self.cone_half, "cooldown_s": self.cooldown}
+                "gate_dmax_mm": self.gate_dmax, "keep_s": self.keep_s}

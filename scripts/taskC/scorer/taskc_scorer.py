@@ -59,7 +59,7 @@ class ScoreConfig:
     pts_aim: float = 3.0
 
     # Sub 2-2 QR 인식에 성공했는가 (7점)
-    decode_dist_m: float = 0.15          # 같은 0.15 m. 최적화가 아니라 채점 조건이다.
+    decode_dist_m: float = 0.18          # 판독은 0.18 m (2026-09-18 사용자 결정). 조준(Sub 2-1)은 0.15 m 그대로다.
     # 판독에도 같은 화면 점유 조건을 걸지 여부. 원문 3조건에는 없어 기본 꺼둔다.
     decode_require_coverage: bool = False
     pts_decode: float = 7.0
@@ -433,9 +433,10 @@ class TaskCScorer:
             # --- 거리 (Sub 2-1 / 2-2 공용 -- 한 번만 계산해 나눠 쓴다)
             d = closest_dist(b0, self._prod_view(prod))
             near = d <= self.cfg.aim_dist_m
+            near_dec = d <= self.cfg.decode_dist_m
             if grasped:
                 sc.ev["min_dist_m"] = d if sc.ev["min_dist_m"] is None else min(sc.ev["min_dist_m"], d)
-                if near:
+                if near_dec:
                     sc.ev["frames_near"] += 1
 
             # --- Sub 2-1 지향 연속 유지 (cfg.aim_hold_s)
@@ -455,7 +456,7 @@ class TaskCScorer:
             if held is not None and self.decode_fn is not None:
                 _cov_ok = (not self.cfg.decode_require_coverage or
                            (cov is not None and float(cov) >= self.cfg.aim_coverage_min))
-                if bool(held) and near and _cov_ok:
+                if bool(held) and near_dec and _cov_ok:
                     txt = self.decode_fn(slug)      # 기하 게이트 통과 시에만 렌더+디코드
                     if txt is not None:
                         cond = (txt == prod["expected_code"])

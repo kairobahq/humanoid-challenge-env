@@ -97,27 +97,12 @@ def check_qr(sc, de):
         ck("판독은 그림으로: %s" % d.get("slug"), d.get("by") == "image",
            "by=%r -- 기하 판정이 점수로 새어 들어갔다" % (d.get("by"),))
         ck("읽힌 문자열이 있다: %s" % d.get("slug"), bool(d.get("text")))
-    # 판독 창 밖에서 셔터가 눌리지 않았는가. 기본값은 qr_decode.py 와 같다 (2026-09-16 횡이탈 60 · 축거리 40~150).
-    lim = float(qr.get("lat_max_mm") or 60.0)
-    dlo = float(qr.get("d_min_mm") or 40.0)
-    dhi = float(qr.get("d_max_mm") or 150.0)
+    # 판독 거리 밖에서 셔터가 눌리지 않았는가. 기준은 qr_decode.py 와 같다 -- 빔 출발선에서 QR 타일까지 직선거리 18 cm 이내.
+    dhi = float(qr.get("gate_dmax_mm") or 180.0)
     for d in recs:
-        ck("판독 창 안에서 읽었다: %s" % d.get("slug"),
-           float(d.get("lat_mm", 1e9)) <= lim + 1e-6,
-           "횡이탈 %.1fmm > 창 %.1fmm" % (float(d.get("lat_mm", -1)), lim))
-        ck("판독 거리가 창 안이다: %s" % d.get("slug"),
-           dlo - 1e-6 <= float(d.get("dist_mm", -1)) <= dhi + 1e-6,
-           "축거리 %.0fmm 가 %.0f~%.0fmm 밖" % (float(d.get("dist_mm", -1)), dlo, dhi))
-    # 냉각. 같은 상품을 냉각 시간 안에 두 번 읽었으면 점수가 부풀 여지가 생긴다.
-    cd = float(qr.get("cooldown_s") or 5.0)
-    by_slot = {}
-    for d in recs:
-        by_slot.setdefault(d.get("slot"), []).append(float(d.get("frame", 0)) / 30.0)
-    for sl, ts in by_slot.items():
-        ts.sort()
-        gap = min((b - a for a, b in zip(ts, ts[1:])), default=None)
-        ck("냉각을 지켰다: 슬롯 %s" % sl, gap is None or gap >= cd - 1e-6,
-           "%.2f초 간격 -- 냉각 %.0f초보다 짧다" % (gap or 0.0, cd))
+        d3 = (float(d.get("lat_mm", 1e9)) ** 2 + float(d.get("dist_mm", 1e9)) ** 2) ** 0.5
+        ck("판독 거리 안에서 읽었다: %s" % d.get("slug"), d3 <= dhi + 1e-6,
+           "QR 까지 %.0fmm > %.0fmm" % (d3, dhi))
     # 읽힌 값이 그 상품의 코드인가. 재생기가 이미 견주지만 기록으로 다시 본다.
     for d in recs:
         want = (sc.get("products", [])[int(d["slot"])].get("code")

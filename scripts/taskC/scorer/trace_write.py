@@ -27,7 +27,7 @@ __all__ = ["TraceWriter", "SCANNER_CAM"]
 
 # 스캐너캠 스펙. 채점기의 화면 점유율(Sub 2-1)이 이 값으로 카메라를 해석적으로 재현한다.
 # V4-250 과 같은 배치다 -- 눈은 빔 출발선에서 3 cm, 겨눔점은 30 cm.
-SCANNER_CAM = [1600, 1000, 31.43, 20.955, 0.03, 0.30]
+SCANNER_CAM = [1600, 1000, 31.43, 27.2415, 0.03, 0.30]   # 2026-09-18 화각 30% 확대 (qr_decode.SCAN_CAM 과 같은 가로 조리개)
 
 
 class TraceWriter:
@@ -76,8 +76,7 @@ class TraceWriter:
     def note_decode(self, slot, slug, frame, lat_mm, dist_mm, text=None, by="image"):
         """판독이 성립한 순간을 남긴다. 채점기는 이것을 판독 성공의 근거로 쓴다.
 
-        `by="image"` 는 스캐너캠 그림을 디코드해 그 상품의 코드가 나왔다는 뜻이고,
-        `"geometry"` 는 그림 판독을 끄고 v5-3c 기하 판정만 쓴 판이다.
+        `by="image"` 는 스캐너캠 그림을 디코드해 그 상품의 코드가 나왔다는 뜻이다. 다른 값은 점수가 되지 않는다.
         """
         self.decode.append({"ok": True, "slot": int(slot), "slug": slug,
                             "frame": int(frame), "lat_mm": round(float(lat_mm), 2),
