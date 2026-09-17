@@ -259,7 +259,7 @@ from taskC import taskC_scanner as scan_look                          # noqa: E4
 from taskC import taskC_beam as beam                                  # noqa: E402
 
 
-# QR 을 스캐너캠 그림으로 읽는다. 끄면 기하 판정만 남는다(v5-3c 와 같은 상태).
+# QR 을 스캐너캠 그림으로 읽는다. 끄면 판독 자체를 하지 않는다 (인식 표시도 점수도 없다).
 _QR_IMG = os.environ.get("TASKC_QR_IMG", "1") == "1"
 
 
@@ -529,7 +529,7 @@ def main():
     # dev 재생기에는 판독기가 없어 기본은 상시 점등이다.
     led_at = [float(v) for v in os.environ.get("TASKC_LED_BLINK_AT", "").replace(" ", "").split(",") if v]
 
-    # 빔 자국 + 범위 인식 + 띠 점등 (V4-70 / V4-318 / V4-337 / v5-3c).
+    # 빔 자국 + QR 타일 자세 + 띠 점등 (V4-70 / V4-318 / V4-337).
     # 자국은 슬롯마다 따로 만든다 -- 상품 메시가 다르고, 프림도 그 상품 밑에 붙는다.
     # 수집 파이프라인은 한 판에 슬롯 하나만 돌려 `--slot` 으로 받지만 여기서는 세 슬롯을
     # 한 판에 잇는다. 그래서 활성 슬롯을 국면 이름(`s0_...`/`s1_...`)에서 읽는다.
@@ -546,10 +546,8 @@ def main():
             from taskC.scorer.qr_decode import QrReader
             _expect = {p["slug"]: P.qr_code(p["slug"]) for p in PRODUCTS}
             qr = QrReader(scene["scan_cam"], _expect, log=_log)
-            _log("QR 이미지 판독 = 횡이탈<=%.0fmm 축거리 %.0f~%.0fmm 면각<=%.0f도"
-                 " 화각<=%.0f도 안에서만 디코드, 읽히면 %.0f초 쉼"
-                 % (qr.lat_max, qr.d_min, qr.d_max, qr.face_max, qr.cone_half,
-                    qr.cooldown))
+            _log("QR 이미지 판독 = 빨간 빔이 상품에 닿아 있고 QR 까지 %.0f mm 이내면 디코드, 읽히면 %.1f초 더 읽고 끈다"
+                 % (qr.gate_dmax, qr.keep_s))
         except Exception as _eq:
             _log("QR 이미지 판독 준비 불가: %r" % (_eq,))
 
@@ -926,25 +924,25 @@ def main():
                     _rl = _rl / max(np.linalg.norm(_rl), 1e-12)
                     _ul = np.cross(_dl, _rl)
                     _nq = sh.update(_o, _dl, _rl, _ul / max(np.linalg.norm(_ul), 1e-12), k)
-                    _lit, _fired = recog.step(_b0, _bd, _pp, _R, _nq, k)
+                    _lit, _fired = False, False
                     if qr is not None:
-                        # 판독 창 -> 그 프레임만 그림 판독 -> 읽히면 냉각.
+                        # 빔이 상품에 닿아 있고 QR 까지 18 cm 이내 -> 그 프레임의 그림을 판독 -> 읽히면 1초 뒤 끈다.
                         _tw9, _tn9 = recog.tile_world(_pp, _R)
-                        _in, _glat, _gd = qr.in_window(_b0, _bd, _tw9, _tn9)
+                        _in, _glat, _gd = qr.in_range(_b0, _bd, _tw9, _nq)
                         _hit = qr.try_read(sim, _b0, _bd, PRODUCTS[cur_slot]["slug"],
                                            k / REC_HZ, _in)
-                        if _hit is not None and _hit[1]:
-                            _fired = True
+                        # 빨간 테두리와 초록 LED 는 **카메라가 기대 코드를 읽었을 때만** 켠다 (2026-09-18).
+                        # 기하 조건으로 인식을 정하는 방식은 양산 파이프라인에만 있다. 여기서는 표시도 점수와 같은
+                        # 근거(스캐너캠 판독)다.
+                        _okh = _hit is not None and _hit[1]
+                        _fired = bool(_okh) and k >= getattr(qr, "_lit_until", -1)
+                        if _fired:
+                            qr._lit_until = k + recog._hold
+                        _lit = k < getattr(qr, "_lit_until", -1)
+                        if _okh:
                             if trace is not None:
                                 trace.note_decode(cur_slot, PRODUCTS[cur_slot]["slug"], k,
                                                   _glat, _gd, text=_hit[0])
-                    elif _fired and trace is not None:
-                        _tw = _pp + _R @ recog._tpos
-                        _v = _tw - _b0
-                        _al = float(_v @ _bd)
-                        trace.note_decode(cur_slot, PRODUCTS[cur_slot]["slug"], k,
-                                          float(np.linalg.norm(_v - _bd * _al)) * 1000.0,
-                                          _al * 1000.0, by="geometry")
                     if _fired and led is not None:
                         led.blink()
                     if band_light is not None:
