@@ -248,6 +248,8 @@ python3 scripts/taskC/scorer/check_trace.py out/trace
 | 재생기 요약의 `띠 안/밖` 과 채점기의 Sub 3 판정이 다르다 | 둘 다 「상품 AABB 가 테이프 바깥선 사각형과 일부라도 겹치면 성립」이 기준입니다. 옛 판 재생기(중심 기준)를 쓰고 있지 않은지 `git log -1 -- scripts/task_c_replay.py` 로 확인하십시오. |
 | 매장 바닥·계산대가 안 보이고 상품만 떠 있다 | 매장 씬 `store/scene/fixture_kit/out/store_scene.usd` 는 같은 폴더의 하위 파일들을 상대 경로로 물어 옵니다. 그 파일 하나만 다른 곳에 링크하면 하위 파일이 안 풀립니다 — 폴더째 있어야 합니다. |
 | `--set gt` 가 「동봉된 기록이 없습니다」로 끝난다 | `scripts/taskC/demos_gt/` 가 마운트됐는지(`/workspace/challenge_scripts/taskC/demos_gt`) 확인하십시오. 컨테이너를 만든 뒤 `git pull` 한 경우 마운트라 바로 보입니다. |
+| 로그에 `triangle mesh collision ... falling back to convexHull` 에러 8줄 (그리퍼 턱 `rh_p12_rn_*`) | 동작에는 영향이 없던 알림입니다. 최신 스크립트에서는 나오지 않습니다 (`git pull`). 턱 충돌체는 전과 같은 convexHull 이고 결과는 같습니다. |
+| 재생 끝의 `베이스 수평 이동` 이 수 mm 로 찍힌다 | 모바일 베이스는 바퀴 마찰로만 서 있어 한 판에 뒤로 6~15 mm 밀립니다(기본 동작, 동봉 GT 점수는 이 상태 기준). 환경 변수 `TASKC_BASE_LOCK=2` 로 베이스를 6축 고정할 수 있습니다(`1` 은 x·y·요만). 데이터 수집은 6축 고정 상태에서 했습니다. 고정하면 결과가 기본 동작과 조금 달라질 수 있어 기본은 끔입니다. |
 
 ### 7. 좌표계 정보
 바닥면이 Z = 0이며 매장 좌표계는 과제 A와 동일합니다. 계산대 중심축은 (-4.00, -4.22)에 위치하며, 로봇은 그 앞인 (-3.45, -4.389)에서 +Y 방향을 바라봅니다(`taskC_layout.py` `ROBOT_BASE_WORLD`: 기준 자리 (-3.45, -4.27)에서 `TASKC_BASE_BACK` 기본값 0.119 m 만큼 계산대 반대쪽으로 물린 값). 씬 JSON 내부의 상품 좌표는 월드 절대 좌표(`pos`)와 로봇 기준 상대 좌표(`pos_robot`: x축 전방, y축 좌측)가 모두 제공됩니다.
