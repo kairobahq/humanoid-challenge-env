@@ -103,6 +103,13 @@ RUN --mount=type=cache,target=${DOCKER_USER_HOME}/.cache/pip \
     cd ${CYCLOLAB_PATH}/source/cyclo_lab && \
     ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install -e .
 
+# 과제 C 채점기(scripts/taskC/scorer/qr_decode.py)가 스캐너 카메라 그림의 QR 을 zxing 으로 읽는다.
+# 없으면 판독이 조용히 0점이 된다("[QR] 판독 불가: No module named 'zxingcpp'"). 의존성이 없는 휠이라
+# --no-deps 와 버전 고정으로 다른 패키지(numpy·opencv 등)는 건드리지 않는다. 앞 레이어의 캐시를 살리려고
+# 마지막 pip 단계 뒤에 따로 둔다.
+RUN --mount=type=cache,target=${DOCKER_USER_HOME}/.cache/pip \
+    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install --no-deps zxing-cpp==3.1.1
+
 # 캐시 볼륨이 붙을 자리를 미리 만들어 둔다 (docker-compose.yaml 의 isaac-cache-* 들).
 RUN mkdir -p ${ISAACSIM_ROOT_PATH}/kit/cache \
              ${DOCKER_USER_HOME}/.cache/ov \

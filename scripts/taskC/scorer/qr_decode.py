@@ -66,6 +66,15 @@ class QrReader:
         self.events = []
         self._off_until = -1.0      # 이 시각까지는 끈다
         self._tries = 0
+        # zxing 이 없으면 판독이 조용히 0점이 된다. 시작할 때 한 번 시험해 크게 알린다 (판독 동작은 그대로다).
+        try:
+            import zxingcpp  # noqa: F401
+            self._zx_ok = True
+        except Exception as e:
+            self._zx_ok = False
+            self._log("!! [QR] zxing-cpp 가 없어 QR 을 읽을 수 없다 (%r). 판독(Sub2-2)·배치(Sub3)가 전부 0점이 된다. "
+                      "./run/setup.sh 로 이미지를 다시 빌드하거나, 컨테이너 안에서 "
+                      "`${ISAACLAB_PATH}/_isaac_sim/python.sh -m pip install --no-deps zxing-cpp==3.1.1` 을 실행하라." % (e,))
 
     def in_window(self, b0, bd, tile_pos, tile_nrm):
         """읽어도 되는 자리인가. `(들어왔나, 횡이탈mm, 축거리mm)`.
@@ -99,7 +108,7 @@ class QrReader:
 
     def try_read(self, sim, b0, bd, slug, t, in_gate):
         """게이트 안이면 한 프레임 읽는다. 읽히면 `(코드, 맞았나)`, 아니면 None."""
-        if self.cam is None or not in_gate or t < self._off_until:
+        if self.cam is None or not in_gate or t < self._off_until or not self._zx_ok:
             return None
         try:
             import numpy as np
@@ -125,7 +134,7 @@ class QrReader:
             return None
 
     def report(self):
-        return {"decode": self.events, "tries": self._tries,
+        return {"decode": self.events, "tries": self._tries, "zxing": bool(self._zx_ok),
                 "lat_max_mm": self.lat_max, "d_min_mm": self.d_min,
                 "d_max_mm": self.d_max, "face_max_deg": self.face_max,
                 "cone_half_deg": self.cone_half, "cooldown_s": self.cooldown}
