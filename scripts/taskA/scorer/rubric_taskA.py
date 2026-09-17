@@ -518,6 +518,17 @@ def score(m, th=None):
                                     "상판 높이는 맞았으나 똑바로 얹힌 순간이 없다 — 기울기 "
                                     + (f"{pt:.1f} 도" if pt is not None else "미상")
                                     + f" (문턱 {t['TILT_OK_DEG']:.0f})")
+        elif place.get("released_any") is False:
+            # **놓지 않은 것은 얹은 것이 아니다** (2026-09-16).
+            #
+            # 앞 판은 높이·멈춤·똑바름 셋만 봤다.  그래서 바구니를 쥔 채 상판 바로 위에 대고
+            # 있으면 통과했다 -- 재현했다: 상판에 닿은 65 프레임 내내 턱을 문 사본이 3 점을
+            # 받았다.  판정은 `score_from_log.py` 의 `placed_free` 가 한다.
+            #
+            # **`is False` 로 본다.**  이 필드가 아예 없는 옛 기록은 `None` 이라 여기 안 걸리고
+            # 예전처럼 채점된다 -- 모르는 것과 아닌 것은 다르다.
+            items["placed"] = _item(False, "상판 높이와 자세는 맞았으나 그 순간 로봇이 "
+                                           "바구니를 쥐고 있었다 — 놓아야 얹은 것이다")
         elif dm is None:
             items["placed"] = _item(None, "책상이 얼마나 움직였는지 못 읽었다 "
                                           "(동적으로 스폰됐나)")
@@ -567,8 +578,13 @@ def score(m, th=None):
                 items["stayed"] = _item(
                     False, f"손 뗀 뒤 {w_win:.1f}초밖에 기록이 없다 "
                            f"(요구 {t['WATCH_S']:.0f}초) — 6초 동안 버티는 것을 보이지 못했다")
-            elif None in (w_seat, w_over, w_tilt, w_spd):
-                items["stayed"] = _item(None, "감시창 안에서 못 읽은 값이 있다")
+            elif None in (w_seat, w_over, w_tilt, w_spd) or dm is None:
+                # `dm`(책상 밀림)을 여기 같이 넣는 이유: 아래에서 그 값을 보기 때문이다.
+                # 못 읽은 채로 통과시키면 `nan > 문턱` 이 거짓이라 **유리한 쪽으로 새는**
+                # 바로 그 구멍이 된다 -- `placed` 가 같은 이유로 None 을 낸다.
+                items["stayed"] = _item(
+                    None, "감시창 안에서 못 읽은 값이 있다"
+                          + (" (책상이 얼마나 움직였는지 포함)" if dm is None else ""))
             else:
                 bad = []
                 if not (-t["SEAT_SINK_MAX_MM"] <= w_seat <= t["SEAT_ON_MAX_MM"]):
@@ -583,6 +599,17 @@ def score(m, th=None):
                 if w_spd >= t["STOP_MM_S"]:
                     bad.append(f"창 마지막 {t['WATCH_TAIL_S']:.1f}초 속도 {w_spd:.1f} mm/s "
                                f"(문턱 {t['STOP_MM_S']:.0f})")
+                # **책상 밀림은 이 항목에도 건다** (2026-09-16).
+                #
+                # 앞 판은 밀림 검사가 「얹음」 가지에만 있었다.  그래서 주행 중에 책상을
+                # 0.5 m 밀어붙이고도 이 4 점이 그대로 나왔다 -- 재현했다(얹음 0 / 6 초 4).
+                # 평가표의 "책상이 2 cm 이상 움직였을 시 가점을 부여하지 않는다" 는
+                # **Sub 3# 전체**에 걸리는 문장이지 한 항목에만 걸리는 것이 아니다.
+                #
+                # `placed` 와 **같은 값**을 본다 (판 내내 최악값) -- 같은 물음에 문턱이나
+                # 기준을 둘 두지 않는다.
+                if dm > t["DESK_OK_MM"]:
+                    bad.append(f"책상이 {dm:.1f} mm 밀렸다 (문턱 {t['DESK_OK_MM']:.0f})")
                 head = f"{t['WATCH_S']:.0f}초 창 최악 — "
                 # 걸침은 채점에 안 쓰지만 **두 문장 모두에 숫자를 남긴다** -- 나중에 다시
                 # 채점에 쓰기로 해도 로그를 다시 만들 필요가 없어야 한다.

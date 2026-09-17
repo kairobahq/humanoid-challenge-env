@@ -243,6 +243,9 @@ _nodrop["grip_pos"][:, :, 2] += 0.30
 want_item("놓기를 실패해도 도착은 받는다", "arrived", True, a=_nodrop)
 want_item("놓기를 실패해도 들고는 받는다", "held", True, a=_nodrop)
 want_item("그래도 얹기는 실패", "placed", False, a=_nodrop)
+# **6 초 항목도 같이 본다** (2026-09-16).  앞 판은 `placed` 만 단언했는데, 한 번도 안 얹은
+# 판이 4 점짜리 이 항목을 받으면 그것도 같은 크기의 구멍이다.  단언하지 않으면 안 잡힌다.
+want_item("얹은 적이 없으면 6 초 항목도 없다", "stayed", False, a=_nodrop)
 
 # 바구니를 한 번도 안 들고 구역에 간다 (손가락을 멀리 둔다)
 _never = {k: np.array(v, copy=True) for k, v in A.items()}
@@ -250,6 +253,64 @@ _never["grip_pos"] = np.tile(_never["crate_pos"][:, None, :]
                              + np.array([0.0, 0.0, 5.0], np.float32),
                              (1, A["grip_pos"].shape[1], 1)).astype(A["grip_pos"].dtype)
 want_item("구역 안에서 한 번도 안 들었다", "held", False, a=_never)
+
+# 쥔 채로 상판에 대고만 있는다 -- **놓아야 얹은 것이다** (2026-09-16).
+#
+# `_never` 와 같은 방식으로 손가락을 옮기되, 이번에는 멀리 두는 대신 **바구니에 붙인다.**
+# 바구니 중심에서 ±15 mm 면 표면 안쪽이라 「가깝다」(40 mm)가 늘 참이고, 한 손의 두 끝마디
+# 사이가 30 mm 라 「물었다」(60 mm)도 늘 참이다 -- 즉 판 내내 쥐고 있고 손을 뗀 순간이 없다.
+#
+# 앞 판은 높이·멈춤·똑바름 셋만 봐서 이것을 얹힘으로 통과시켰다.  재현했다: 상판에 닿은
+# 65 프레임 내내 턱을 문 사본이 얹힘 3 점을 받았다.
+_hold = {k: np.array(v, copy=True) for k, v in A.items()}
+_noff = np.zeros((A["grip_pos"].shape[1], 3), np.float32)
+_noff[:, 1] = ((np.arange(A["grip_pos"].shape[1]) % 4) // 2) * 0.030 - 0.015
+_hold["grip_pos"] = (_hold["crate_pos"][:, None, :]
+                     + _noff[None, :, :]).astype(A["grip_pos"].dtype)
+want_item("쥔 채 상판에 대고만 있으면 얹힘이 아니다", "placed", False, a=_hold)
+want_item("쥔 채로는 감시창도 안 열린다", "stayed", False, a=_hold)
+# **헛통과 방지.**  「쥔 채」를 시험하려면 판 내내 쥐고 있어야 한다.  손가락을 잘못 놓아
+# 파지가 안 잡히면 위 둘은 여전히 초록이지만 **다른 이유로** 초록이고, 그러면 이 시험은
+# 아무것도 지키지 못한다.
+# **`HEAD` 여야 한다, `_HD` 가 아니다.**  `_HD`(:501)는 자리띠 시험용으로 `kinematic` 을
+# False 로 뒤집어 둔 머리말이라 힘 열로 접촉을 읽는다.  이 시험은 손가락 위치로 만든 것이라
+# 기하 경로여야 하고, 무엇보다 위 `want_item` 이 쓰는 머리말과 같아야 같은 것을 잰다.
+_phold = SFL.measure_one(copy.deepcopy(HEAD), _hold, SCENE, TH)
+_gh = _phold.get("geom_grip") or {}
+if not _gh:
+    FAIL.append("시험이 틀렸다: 기하 파지 기록이 없어 「쥔 채」를 시험하지 못한다")
+elif _gh.get("held_frames") != _gh.get("frames"):
+    FAIL.append("시험이 틀렸다: 손가락을 붙였는데 쥔 프레임이 %s/%s 뿐이다 -- 손을 뗀 순간이 "
+                "있으면 「쥔 채」를 시험하는 것이 아니다"
+                % (_gh.get("held_frames"), _gh.get("frames")))
+
+# 책상을 밀어붙인다 -- **6 초 항목에도 걸려야 한다** (2026-09-16).
+#
+# 앞 판은 밀림 검사가 「얹음」 가지에만 있어서, 주행 중에 0.5 m 를 밀고도 이 4 점이 그대로
+# 나왔다 (재현: 얹음 0 / 6 초 4).
+#
+# 두 가지를 조심해서 만든다.
+#   * **0 번 프레임은 그대로 둔다.**  위생 검사가 장면의 책상과 기록 첫 프레임을 20 mm 로
+#     대조하므로, 처음부터 밀어 두면 시험이 「채점 거부」로 끝나 아무것도 못 본다.
+#   * **50 mm 만 민다.**  문턱(20 mm)은 확실히 넘되 상판은 안 벗어나는 크기다.  0.5 m 를
+#     밀면 바구니가 상판 밖으로 나가 **낙하로 판이 끝나고**, 그러면 이 시험은 통과하되
+#     밀림 때문이 아니라 낙하 때문에 통과한다 -- 엉뚱한 이유로 초록인 시험이 제일 나쁘다.
+_shove = {k: np.array(v, copy=True) for k, v in A.items()}
+_shove["desk_pos"][len(_shove["t"]) // 2:, 0] += 0.050
+want_item("책상을 밀면 얹힘이 취소된다", "placed", False, a=_shove)
+want_item("책상을 밀면 6 초 항목도 취소된다", "stayed", False, a=_shove)
+# **헛통과 방지.**  위 둘이 초록인 이유가 정말 「밀림」인지 확인한다.  많이 밀면 바구니가
+# 상판 밖으로 나가 **낙하로 판이 끝나고**, 그러면 같은 초록이 나오되 밀림과는 무관해진다.
+# 실측(2026-09-16): 50 mm 에서는 판이 `ok` 로 끝나고 두 항목만 "책상이 50.0 mm 밀렸다" 로
+# 떨어진다 -- 나머지 네 항목은 만점 그대로다.
+_pshv = SFL.measure_one(copy.deepcopy(HEAD), _shove, SCENE, TH)   # 위 `want_item` 과 같은 머리말
+_dshv = (_pshv.get("desk") or {}).get("worst_mm")
+if _pshv.get("stopped_why"):
+    FAIL.append("시험이 틀렸다: 책상 밀기 판이 %s 로 끝나 밀림을 시험하지 못한다"
+                % _pshv["stopped_why"])
+elif _dshv is None or _dshv <= TH["DESK_OK_MM"]:
+    FAIL.append("시험이 틀렸다: 잰 밀림이 %s mm 라 문턱(%.0f)을 안 넘는다 -- 시험이 무의미하다"
+                % (_dshv, TH["DESK_OK_MM"]))
 
 # 구역 반지름이 씬에서 계산되고, **한계 안에 머무는가.**
 #

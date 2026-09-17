@@ -330,6 +330,20 @@ def measure_one(head, a, scene, th):
               & (c_speed < th["STOP_MM_S"]))
     upright = tilt_all <= th["TILT_OK_DEG"]
     placed_ok = seated & upright
+    # **놓았는가를 같이 본다** (2026-09-16).
+    #
+    # 위 셋(높이·멈춤·똑바름)만 보면 바구니를 **쥔 채** 상판 5 mm 위에 가만히 대고 있는 것이
+    # 「얹음」으로 통과한다.  재현했다: 상판에 닿은 65 프레임 내내 턱을 문 사본(벌림 24.8 mm,
+    # 기하 파지 65/65)이 얹힘 3 점을 받았다.  이 과제의 뜻은 **놓는 것**이다.
+    #
+    # `on_grip` 이 아니라 `on_robot` 을 쓰는 이유는 감시창을 여는 `rel` 과 같다 -- 턱은 폈는데
+    # 팔뚝에 걸쳐 둔 것은 아직 놓은 것이 아니다.
+    #
+    # **`placed_ok` 자체를 좁히지 않는다.**  좁히면 손을 안 뗀 판의 `out["place"]` 가 숫자
+    # 없는 가지로 빠져 채점이 0 점이 아니라 **「못 읽었다」(None)** 가 된다 -- 못 잰 것과
+    # 못 한 것은 다른 뜻이고, 그 혼동이 이 채점기가 앞서 새던 방식이다.  그래서 숫자
+    # (seat/tilt/overhang)는 그대로 두고 불리언만 따로 낸다.
+    placed_free = placed_ok & (~on_robot)
 
     # ── 판이 끝나는 자리 ────────────────────────────────────────────────────────────────
     #
@@ -427,6 +441,9 @@ def measure_one(head, a, scene, th):
         held, gripped, on_top = held[sl], gripped[sl], on_top[sl]
         tilt_all, seated, upright, placed_ok = (tilt_all[sl], seated[sl],
                                                 upright[sl], placed_ok[sl])
+        # `placed_free` 도 같이 자른다 -- 빼먹으면 길이가 어긋나 아래 `.any()` 가 판 전체를
+        # 본다.  이 목록에 새 배열을 더할 때마다 여기도 같이 더해야 한다.
+        placed_free = placed_free[sl]
         seat_mm, over_mm, c_speed = seat_mm[sl], over_mm[sl], c_speed[sl]
         c_speed_reported = c_speed_reported[sl]
         corners = corners[sl]
@@ -586,7 +603,10 @@ def measure_one(head, a, scene, th):
                             "at_s": float(a["t"][i]),
                             # 실패했을 때 **무엇 때문인지** 가리려고 둘을 따로 남긴다.
                             "seated_any": bool(seated.any()),
-                            "upright_any": bool((seated & upright).any())}
+                            "upright_any": bool((seated & upright).any()),
+                            # 똑바로 얹힌 **그 순간에 손을 놓고 있었나.**  거짓이면 쥔 채
+                            # 댄 것이다 -- 높이·자세가 맞아도 얹은 것이 아니다.
+                            "released_any": bool(placed_free.any())}
 
         # 감시창의 시작은 **로봇의 단계가 아니라 바구니의 상태**로 잡는다.
         #
