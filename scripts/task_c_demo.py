@@ -389,7 +389,11 @@ def main():
     #
     # 접촉 오프셋은 접촉을 미리 만들어 깊이 파고들기 전에 잡는 값이다(권장 5~10 mm).
     # 재생기 안에서만 건다 -- 평가 경로(task_c_demo.py)는 건드리지 않는다.
-    # TASKC_JAW_SDF=0 으로 끈다.
+    #
+    # 2026-09-18: SDF 지정 한 줄만 기본 끔으로 바꿨다(TASKC_JAW_SDF_APPROX=1 로 되살린다). SDF 스키마
+    # (PhysxSDFMeshCollisionAPI)가 빠져 있어 PhysX 가 "triangle mesh ... falling back to convexHull" 에러
+    # 8 줄을 내며 USD 의 convexHull 로 되돌리고 있었다 -- 즉 SDF 는 한 번도 걸린 적이 없다. 접촉 오프셋은
+    # 그대로 둔다. 실측(출하 3 판): 점수 · 베이스 이동 · 세 카메라 화면이 종전과 같고 에러만 사라진다.
     if os.environ.get("TASKC_JAW_SDF", "1") == "1":
         try:
             from pxr import Usd as _U9, UsdPhysics as _UP9, PhysxSchema as _PS9
@@ -401,7 +405,8 @@ def main():
                 _path9 = str(_pr9.GetPath())
                 if "/collisions/" not in _path9 or not _is_jaw9(_path9):
                     continue
-                _UP9.MeshCollisionAPI.Apply(_pr9).CreateApproximationAttr().Set("sdf")
+                if os.environ.get("TASKC_JAW_SDF_APPROX", "0") == "1":
+                    _UP9.MeshCollisionAPI.Apply(_pr9).CreateApproximationAttr().Set("sdf")
                 _PS9.PhysxCollisionAPI.Apply(_pr9).CreateContactOffsetAttr().Set(_co)
                 _PS9.PhysxCollisionAPI(_pr9).CreateRestOffsetAttr().Set(0.0)
                 _n9 += 1
@@ -662,6 +667,47 @@ def main():
     z += float(os.environ.get("TASKC_BASE_UP", "0.0"))
     robot_pose.place(robot, origin, (rx, ry), L.ROBOT_YAW, spawn_quat, z)
     scene.write_data_to_sim()
+
+    # 모바일 베이스 잠금 (선택). TASKC_BASE_LOCK = 0 끔(기본) · 1 x·y·요 · 2 6축 전부.
+    #
+    # 이 과제에서 베이스는 움직이지 않는다 -- 기록의 바퀴·조향 명령은 전부 0 이다. 수집 파이프라인은
+    # 첫 걸음의 루트 자세를 매 걸음 다시 써 넣어 6축을 묶은 채 수집했다(qr_sweep_replay.py V4-30①).
+    # 여기서는 베이스가 자유 물체라 바퀴 마찰로만 서 있고, 실측으로 한 판에 뒤로 6~15 mm 밀린다
+    # (10 초에 약 0.5 mm 씩, 충격 때 3~8 mm 씩). 매 걸음 루트를 써 넣는 방식은 여기서 177 mm 어긋남을
+    # 낸 적이 있어, 세계와 루트 링크 사이에 D6 조인트를 걸어 같은 효과를 낸다.
+    #
+    # 기본은 끔이다. 스캐너 쥐는 자리 등 보정값이 밀리는 베이스에서 맞춰져 있어, 잠그면 오른손목
+    # 화면이 밀 기록에서 조금 멀어지고 GT1 점수가 달라진다(36 -> 24). 재보정 뒤에 기본값을 바꾼다.
+    if os.environ.get("TASKC_BASE_LOCK", "0") in ("1", "2"):
+        try:
+            from pxr import Gf as _G12, Usd as _U12, UsdPhysics as _UP12
+            _rn12 = robot.body_names[0]
+            _rb12 = None
+            for _pr12 in _U12.PrimRange(stage.GetPrimAtPath("/World/envs/env_0/Robot")):
+                if _pr12.GetName() == _rn12 and _pr12.HasAPI(_UP12.RigidBodyAPI):
+                    _rb12 = _pr12
+                    break
+            if _rb12 is None:
+                raise RuntimeError("루트 링크 %s 프림을 못 찾았다" % _rn12)
+            _q12 = robot_pose.quat_for_yaw(spawn_quat, L.ROBOT_YAW)[0].cpu().numpy().astype(float)
+            _p12 = (origin.cpu().numpy().astype(float) + np.array([rx, ry, z], dtype=float))
+            _j12 = _UP12.Joint.Define(stage, "/World/envs/env_0/BaseLock")
+            _j12.CreateBody1Rel().SetTargets([_rb12.GetPath()])
+            _j12.CreateExcludeFromArticulationAttr().Set(True)
+            # 조인트 축을 세계 축에 맞춘다: 세계 쪽은 (자리, 항등), 링크 쪽은 (0, 링크 자세의 역).
+            _j12.CreateLocalPos0Attr().Set(_G12.Vec3f(float(_p12[0]), float(_p12[1]), float(_p12[2])))
+            _j12.CreateLocalRot0Attr().Set(_G12.Quatf(1.0, 0.0, 0.0, 0.0))
+            _j12.CreateLocalPos1Attr().Set(_G12.Vec3f(0.0, 0.0, 0.0))
+            _j12.CreateLocalRot1Attr().Set(_G12.Quatf(float(_q12[0]), -float(_q12[1]), -float(_q12[2]), -float(_q12[3])))
+            _axes12 = (("transX", "transY", "rotZ") if os.environ.get("TASKC_BASE_LOCK") == "1"
+                       else ("transX", "transY", "transZ", "rotX", "rotY", "rotZ"))
+            for _ax12 in _axes12:      # 아래 > 위 = 잠금
+                _l12 = _UP12.LimitAPI.Apply(_j12.GetPrim(), _ax12)
+                _l12.CreateLowAttr().Set(1.0)
+                _l12.CreateHighAttr().Set(-1.0)
+            _log("베이스 잠금: %s 고정, 루트 링크 %s" % ("·".join(_axes12), _rn12))
+        except Exception as _e12:
+            _log("베이스 잠금 불가: %r" % (_e12,))
 
     def _set_root(obj, pos_w, quat_w):
         st = obj.data.root_state_w[0].clone()
