@@ -189,9 +189,15 @@ JOINTS = np.load(JNT_FILE) if os.path.isfile(JNT_FILE) else ACTIONS
 # 기록에서 `gripper_l` 의 명령-도달 차가 rms 98 mrad 로 가장 큰데, 그게 물체가 막고 있는 양이다.
 # 머리·리프트는 둘의 차가 0.03~0.3 mrad 라 어느 쪽이든 같다 -- 명령값을 그대로 둔다.
 #
-# 0 을 주면 종전대로 전부 명령값을 명령한다.
+# 2026-09-18: **기본을 끔으로 바꿨다 (명령값을 그대로 명령한다).**
+#
+# 도달값은 밀에서 이미 관절 각속도 제한(velocity_limit_sim)에 한 번 깎인 값이다. 그것을 다시 목표로
+# 주면 목표가 늘 사양 안에 있어 제한이 걸릴 일이 없다 -- 실기라면 깎여서 목표에 못 미쳤을 명령이
+# 여기서는 그대로 실행된다. 실물 관절은 사양 이상으로 돌지 못하므로, 평가도 같은 조건이어야 한다.
+# 대신 화면이 정답 영상보다 팔에서 4~15 mrad 뒤처진다 -- 그 지연이 실기에서도 일어나는 지연이다.
+# TASKC_CMD_ACHIEVED=1 로 종전 동작(팔만 도달값 명령)을 되살릴 수 있다.
 CMD = ACTIONS
-if os.environ.get("TASKC_CMD_ACHIEVED", "1") == "1" and JOINTS is not ACTIONS:
+if os.environ.get("TASKC_CMD_ACHIEVED", "0") == "1" and JOINTS is not ACTIONS:
     _arm_ix = [i for i, n in enumerate(REC_JOINTS) if n.startswith("arm_")]
     CMD = ACTIONS.copy()
     CMD[:, _arm_ix] = JOINTS[:, _arm_ix]
