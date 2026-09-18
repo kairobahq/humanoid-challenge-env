@@ -52,7 +52,7 @@ class ScoreConfig:
 
     # Sub 2-1 스캐너가 물체를 향했는가 (3점)
     aim_dist_m: float = 0.15             # 빔 출발선 -> 표면 최근접점 0.15 m 이하
-    aim_hold_s: float = 1.0              # 1초 연속
+    aim_hold_s: float = 0.5              # 0.5초 연속 (2026-09-18: 1.0 -> 0.5, 파지 판정과 같은 값)
     # 원문은 「프레임에 상품 픽셀 1개 이상」이지만, 그러면 화면 구석에 점 하나만 걸쳐도
     # 통과한다. 기준: **프레임의 10% 이상**을 차지해야 한다.
     aim_coverage_min: float = 0.10       # 스캐너 카메라 프레임 대비 상품 픽셀 비율
@@ -210,13 +210,13 @@ class ProductScore:
         _md = e["min_dist_m"]
         say("sub2_1_aim", self.aim,
             f"빔까지 최소 {(_md or 0):.3f}m, 화면 점유 최대 "
-            f"{(e['max_coverage'] or 0)*100:.1f}% 로 {cfg.aim_hold_s:.0f}초 연속 유지했다",
+            f"{(e['max_coverage'] or 0)*100:.1f}% 로 {cfg.aim_hold_s:g}초 연속 유지했다",
             (f"빔까지 최소 {_md:.3f}m — 기준 {cfg.aim_dist_m:.2f}m 밖이다"
              if _md is not None and _md > cfg.aim_dist_m
              else (f"거리는 들어왔으나({(_md or 0):.3f}m) 화면 점유 최대 "
                    f"{(e['max_coverage'] or 0)*100:.1f}% 로 기준 {cfg.aim_coverage_min*100:.0f}% 에 못 미쳤다"
                    if (e.get("max_coverage") or 0) < cfg.aim_coverage_min
-                   else f"거리·점유는 만족했으나 {cfg.aim_hold_s:.0f}초 연속을 못 채웠다")),
+                   else f"거리·점유는 만족했으나 {cfg.aim_hold_s:g}초 연속을 못 채웠다")),
             f"화면 점유율(프레임의 {cfg.aim_coverage_min*100:.0f}% 이상)이 배선되지 않아 재지 못했다")
 
         say("sub2_2_decode", self.decode,
@@ -463,6 +463,14 @@ class TaskCScorer:
                 else:
                     cond = False                    # 게이트 밖 -- 렌더하지 않는다
             sc.decode.update(cond, dt, t)
+            # 판독이 성립하면 조준도 성립이다 (2026-09-18). 판독은 조준의 세 조건을 모두 만족한
+            # 프레임에서 카메라가 기대 바코드를 실제로 읽어야 성립하므로, 조준보다 엄격하다.
+            # 읽혔는데 연속 유지 시간을 못 채웠다고 조준만 떨어지는 것은 앞뒤가 맞지 않는다.
+            if sc.decode.passed and not sc.aim.passed:
+                sc.aim.passed = True
+                sc.aim.available = True
+                if sc.aim.first_t is None:
+                    sc.aim.first_t = sc.decode.first_t
 
             # --- Sub 3 내려놓은 순간 한 번
             # 「내려놓았다」 = 쥔 상태가 풀리고 **그 뒤 처음으로** 속도가 10mm/s 미만이 된 시점.
