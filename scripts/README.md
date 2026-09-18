@@ -54,7 +54,7 @@ scripts/taskC/
   taskC_check.py        스폰 검증 — 배치 구역 안쪽, 상판 관통, 넘어짐, QR 방위 오차 3도, 상품 간격 8cm
   taskC_report.py       장면 요약을 터미널에 찍고 --scene-json 파일로 저장
   taskC_counter.py      배치 구역을 빨간 테이프로 그리고, 매장 기본 스캐너·바구니와 계산대 하단 선반 제거
-  taskC_beam.py         스캐너 빔이 상품 표면에 상으로 맺히는 현상 구현, 인식 범위 판정, 계산대 테두리 점등
+  taskC_beam.py         스캐너 빔이 상품 표면에 상으로 맺히는 현상 구현, QR 타일 자세, 계산대 테두리 점등
   taskC_scanner.py      스캐너 겉모습 — 도색, 초록 LED 점멸, 빔 창의 빨간 발광 점
   taskC_lerobot.py      허깅페이스 학습 데이터 한 편을 재생기가 읽는 폴더 형태로 변환
   taskC_ffw_sg2.py      과제 C 로봇 설정 — 수집 당시의 관절 강성·감쇠·그리퍼 마찰
