@@ -9,9 +9,11 @@
 # parquet 한 장이라 모양이 다르므로 여기서 옮겨 담는다.
 #
 # **장면(상품이 계산대 어디에 놓였나)은 데이터셋에 없다.** 과제 A 가 매장 12판을
-# `taskA/stores/` 에 싣고 있듯, 과제 C 도 1,089 편의 장면을 `taskC/scenes/<시드>.json` 으로
-# 저장소에 싣는다. 데이터셋 쪽 `meta/taskC_episodes.jsonl` 이 편마다 `seed` 를 주므로
-# 그 값으로 짝을 찾는다.
+# `taskA/stores/` 에 싣고 있듯, 과제 C 도 장면을 저장소에 싣는다. 데이터셋은 `taskC/release1/`
+# (1,089 편) 과 `taskC/release2/` (560 편) 두 폴더이고, 경로는 그중 하나를 준다.
+#   release1: `taskC/scenes/<시드>.json` -- `meta/taskC_episodes.jsonl` 의 `seed` 로 짝을 찾는다.
+#   release2: `taskC/scenes/release2/<source>.json` -- 같은 파일의 `source`(`<품목>_<시드>`) 로 찾는다.
+#             (release2 는 시드가 품목 사이에서 겹치는 편이 있어 시드만으로는 장면이 갈리지 않는다.)
 #
 # 쓰는 법 (재생기가 알아서 부르므로 보통은 직접 부를 일이 없다):
 #
@@ -71,7 +73,7 @@ def _phase_names(root):
     f = os.path.join(_meta_dir(root), "taskC_products.json")
     if os.path.isfile(f):
         d = json.load(open(f, encoding="utf-8"))
-        names = d.get("phase_index") or {}
+        names = d.get("phase_no") or d.get("phase_index") or {}   # 09-15 메타는 `phase_no`
         return {int(k): v for k, v in names.items()}
     return {}
 
@@ -86,9 +88,15 @@ def _parquet_path(root, episode_index):
     return p
 
 
-def scene_path(seed, scenes_dir=None):
-    """시드로 장면 JSON 을 찾는다. 저장소에 실린 1,089 편을 먼저 본다."""
-    p = os.path.join(scenes_dir or SCENES_DIR, "%d.json" % seed)
+def scene_path(seed, scenes_dir=None, root=None, source=None):
+    """장면 JSON 을 찾는다. 데이터셋 폴더 이름(release1/release2)의 하위 폴더에 `<source>.json` 이
+    있으면 그것을, 없으면 종전대로 `<시드>.json` 을 쓴다."""
+    base = scenes_dir or SCENES_DIR
+    if root and source:
+        p = os.path.join(base, os.path.basename(os.path.normpath(root)), "%s.json" % source)
+        if os.path.isfile(p):
+            return p
+    p = os.path.join(base, "%d.json" % seed)
     return p if os.path.isfile(p) else None
 
 
@@ -111,20 +119,22 @@ def materialize(root, episode_index, out_dir=None, scenes_dir=None, log=print):
     n_want = int(rec.get("length") or 0)
     out_dir = out_dir or os.path.join(_HERE, ".lerobot_cache", "ep%06d" % episode_index)
 
-    scene = scene_path(seed, scenes_dir)
+    scene = scene_path(seed, scenes_dir, root=root, source=rec.get("source"))
     if scene is None:
         raise SystemExit(
             "시드 %d 의 장면 JSON 이 없다. 저장소의 %s 를 확인하라 -- 데이터셋에는 장면이 들어 "
-            "있지 않고, 과제 A 의 매장처럼 저장소가 싣는다." % (seed, scenes_dir or SCENES_DIR))
+            "있지 않고, 과제 A 의 매장처럼 저장소가 싣는다 (release2 는 scenes/release2/<source>.json)."
+            % (seed, scenes_dir or SCENES_DIR))
 
     done = os.path.join(out_dir, "actions.npy")
     if os.path.isfile(done) and (not n_want or len(np.load(done)) == n_want):
         return out_dir
 
     pq = _need_pyarrow()
-    table = pq.read_table(_parquet_path(root, episode_index),
-                          columns=[c for c in ("action", "observation.state", "timestamp",
-                                               "phase_index", "frame_index")])
+    pth = _parquet_path(root, episode_index)
+    have = set(pq.read_schema(pth).names)   # `phase_index` 는 09-15 부터 없다 -- 있는 열만 읽는다
+    table = pq.read_table(pth, columns=[c for c in ("action", "observation.state", "timestamp",
+                                                    "phase_index", "frame_index") if c in have])
     act = _column(table, "action")
     st = _column(table, "observation.state")
     if act is None:
@@ -143,13 +153,18 @@ def materialize(root, episode_index, out_dir=None, scenes_dir=None, log=print):
     np.save(os.path.join(out_dir, "joints.npy"), st)
     np.save(os.path.join(out_dir, "timestamps.npy"), ts)
 
-    # 국면 -- `phase_index` 가 바뀌는 프레임이 국면의 시작이다.
-    ph = _column(table, "phase_index")
-    if ph is not None:
+    # 국면 -- `meta/taskC_episodes.jsonl` 의 `phase_runs` [[번호, 시작, 끝), ...] (2026-09-15 부터 parquet 에
+    # `phase_index` 열이 없고 여기로 옮겨졌다). 옛 판이면 종전대로 열에서 만든다.
+    names = _phase_names(root)
+    runs = rec.get("phase_runs")
+    ph = None if runs else _column(table, "phase_index")
+    if runs:
+        phases = [{"name": names.get(int(no), str(int(no))) if int(no) else "", "start_frame": int(s0)} for no, s0, _ in runs]
+    elif ph is not None:
         ph = np.asarray(ph, dtype=np.int64).reshape(-1)
-        names = _phase_names(root)
         marks = [0] + [i for i in range(1, len(ph)) if ph[i] != ph[i - 1]]
         phases = [{"name": names.get(int(ph[i]), str(int(ph[i]))), "start_frame": int(i)} for i in marks]
+    if runs or ph is not None:
         json.dump({"phases": phases, "n_frames": int(len(act))},
                   open(os.path.join(out_dir, "phases.json"), "w", encoding="utf-8"),
                   ensure_ascii=False, indent=1)
@@ -177,7 +192,7 @@ def materialize(root, episode_index, out_dir=None, scenes_dir=None, log=print):
 def _cli():
     import argparse
     ap = argparse.ArgumentParser(description="허깅페이스 학습 데이터 한 편을 재생기가 읽는 폴더로 펼친다.")
-    ap.add_argument("root", help="내려받은 데이터셋 경로 (meta/ 와 data/ 가 있는 곳)")
+    ap.add_argument("root", help="내려받은 데이터셋의 release 폴더 (taskC/release1 또는 taskC/release2 -- meta/ 와 data/ 가 있는 곳)")
     ap.add_argument("episode", type=int, help="편 번호 (meta/taskC_episodes.jsonl 의 episode_index)")
     ap.add_argument("--out", default=None, help="펼칠 곳 (기본: taskC/.lerobot_cache/ep<번호>)")
     ap.add_argument("--scenes", default=None, help="장면 폴더 (기본: taskC/scenes)")

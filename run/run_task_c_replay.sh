@@ -12,7 +12,8 @@ SEED=0
 
 # 허깅페이스에 공개된 학습 데이터를 직접 틀려면 아래 둘을 채운다 (그때는 SET/SEED 를 안 쓴다).
 # 경로는 **컨테이너 안에서 보이는** 경로여야 한다 -- docker-compose.yaml 에 마운트를 더하거나
-# 데이터셋을 이 저장소 아래에 두면 된다. 편 번호는 meta/taskC_episodes.jsonl 의 episode_index.
+# 데이터셋을 이 저장소 아래에 두면 된다. 경로는 taskC/release1 또는 taskC/release2 폴더까지, 편 번호는
+# 그 폴더의 meta/taskC_episodes.jsonl 의 episode_index.
 #   https://huggingface.co/datasets/SSU-RealityLab/2026CS-Store-Challenge
 LEROBOT=""
 EPISODE_INDEX=0
