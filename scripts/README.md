@@ -13,7 +13,7 @@
 | `task_c_replay.py` | **과제 C 한 판**(상품 3개 연속 또는 1개)을 물리로 다시 틀어 줍니다. |
 | `taskA/` | 과제 A 의 **장면 정의 모듈과 실측값**. 위 데모가 읽습니다 |
 | `taskB/` | 과제 B 의 **채점기**(`taskb_score.py`)와 `task_b_replay.py`가 트는 **시연 기록 일곱 판**(`demos/`, 2.4 MB) |
-| `taskC/` | 과제 C 의 **장면 정의 모듈**, `task_c_replay.py` 가 트는 **시연 기록**(`demos/` 품목별 4편, `demos_gt/` 정답 궤적 2편 — GT0 은 상품 3개 모두 성공, GT1 은 1개 실패), **장면 파일 1,089개**(`scenes/`), **기타 진열대 진열 12벌**(`stores/`), **채점기**(`scorer/`) |
+| `taskC/` | 과제 C 의 **장면 정의 모듈**, `task_c_replay.py` 가 트는 **시연 기록**(`demos/` 품목별 4편, `demos_gt/` 정답 궤적 2편 — GT0 은 상품 3개 모두 성공, GT1 은 1개 실패), **장면 파일 1,089 + 560개**(`scenes/`, `scenes/release2/`), **기타 진열대 진열 12벌**(`stores/`), **채점기**(`scorer/`) |
 
 ### 코드는 여기, 에셋은 이미지
 
@@ -60,7 +60,8 @@ scripts/taskC/
   taskC_ffw_sg2.py      과제 C 로봇 설정 — 수집 당시의 관절 강성·감쇠·그리퍼 마찰
   taskC_store_dress.py  기타 진열대(곤돌라)에 시드가 고른 진열을 건다 — 배경만 바뀌고 과제 기하는 그대로
   _qr_tiles.json        상품별 QR 타일의 중심·법선 (스캐너를 어디로 겨눌지 정하는 기준값)
-  scenes/               장면 파일 1,089개 (허깅페이스 데이터셋의 각 에피소드에 대응)
+  scenes/               장면 파일 1,089개 (허깅페이스 taskC/release1 의 각 에피소드에 대응)
+  scenes/release2/      장면 파일 560개 (taskC/release2, 파일명은 <품목>_<시드>)
   stores/               기타 진열대(곤돌라) 진열 12벌 — 시드가 하나를 골라 배경에 건다
   demos/                개별 상품 시연 궤적 4편 — 상품 1개만 처리 (task_c_replay.py --set single)
   scorer/               채점 모듈 — 상품 1개당 5개 항목 17점, 3개면 51점 만점
@@ -189,7 +190,7 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 움직이고 나머지는 실행되지 않습니다. `TASKC_CMD_ACHIEVED=1` 을 주면 팔만 도달값(joints.npy)을 명령해
 화면이 정답 영상에 더 붙지만, 도달값은 이미 제한을 통과한 값이라 제한이 사실상 걸리지 않습니다.
 - `--set single`: 상품 1개를 처리하는 훈련 데이터 형식 재생 (4편, `--seed 0~3`)
-- `--lerobot DIR --episode-index N`: 허깅페이스 LeRobot 데이터셋의 한 편을 재생
+- `--lerobot DIR --episode-index N`: 허깅페이스 LeRobot 데이터셋의 한 편을 재생 (DIR 은 `taskC/release1` 또는 `taskC/release2`)
 - `--trace DIR`: 채점에 쓸 관측치를 프레임마다 기록
 
 채점은 재생과 분리되어 있습니다. `--trace` 로 남긴 기록을 `scorer/score_from_trace.py` 가 채점하고, `scorer/check_trace.py` 가 기록과 채점 결과의 모순 여부를 검사합니다. 상품 1개당 5개 항목 17점, 계산대 위 3개를 처리하므로 51점 만점입니다. 자체 검증 모듈은 `scorer/selftest.py` 이며, 절차와 판정 기준은 `docs/task_c.md` 6절에 있습니다.
