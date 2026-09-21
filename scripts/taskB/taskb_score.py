@@ -97,11 +97,13 @@ FRONT_ROW_X = FRONT_X + taskB_restock.FRONT_MARGIN + taskB_restock.ROW_PITCH / 2
 
 # ---- 문턱값 -- 시트 H열. ※ 는 시트가 「아직 안 잰 값」이라 표시한 것과 그 실측 ------------------
 THRESHOLD = {
-    "touch_N": 0.5,          # B6  실시간: 팔꿈치 아래 어느 부위든 상품을 이보다 세게 민 순간
-    "touch_moved_mm": 2.0,   # B6  오프라인: 상품이 **상자 좌표계에서** 이만큼 넘게 움직인 순간 (사용자 2026-09-03: "그리퍼가
-                             #     집지 않더라도 부딪히거나 하면 점수"). 상자를 통째로 민 것은 상대 위치가 안 변해 안 걸린다.
-                             #     실측 pick 1,200판: 안 건드린 상품이 판 내내 움직인 최대의 중앙값 0.15 mm (13배 여유),
-                             #     집은 상품은 30 mm 들리기 전에 중앙 23.4 mm 움직임. 들린 것(B7)은 그 자체로 닿은 것이다
+    "touch_N": 0.5,          # B6  상품에 붙은 접촉 센서가 팔꿈치 아래 로봇 바디와 이보다 세게 닿은 순간.
+                             #     **이것 하나로만 판정한다** (사용자 2026-09-21: "상품이 접촉센서에 닿아야한다는
+                             #     말이야"). 2026-09-03 의 "부딪히거나 하면 점수" 를 상품이 상자 안에서 2 mm 움직였거나
+                             #     30 mm 들렸으면 닿은 것으로 읽었던 것이 틀렸다 -- 상자를 밀거나 로봇이 지나가며 낸
+                             #     진동으로도 상품은 움직이고, 그러면 그리퍼가 상품에 한 번도 안 닿은 판이 점수를 받는다.
+                             #     실제로 평가 서버에서 그렇게 받은 판이 있었다 (제출 #39, A1_touch 1점, 접촉 0.0 N).
+                             #     0.5 N 은 평가 환경의 판정기 `taskb_restock_judge.py` 의 `touch_N` 과 같은 값이다
     "lift_mm": 30.0,         # B7  ※ 실측 2026-09-03: 성공한 pick 2,284판의 들어올림 최소 101.8 mm, 30 미만 0판.
                              #     실패한 pick 은 로컬 표본에 없어 「끌린 것」쪽 분포는 못 쟀다
     "near_shelf_mm": 300.0,  # B9  ※ 실측: passed 3,133판 x 최대 최소 0.513, refused 164판 중 160판도 넘음.
@@ -294,6 +296,7 @@ class ProductScorer:
         self.lift_max_mm = 0.0
         self.moved_max_mm = 0.0
         self.moved_at_touch_mm = None
+        self.contact_at_touch_N = None
         self.n = 0
         self.last = None
         self.result = None
@@ -338,9 +341,9 @@ class ProductScorer:
         self.moved_max_mm = max(self.moved_max_mm, moved_mm)
         lifted = (float(p[2]) - self.z0) * 1000.0 > THRESHOLD["lift_mm"]
         hit = {
-            # 닿았다 = 센서가 힘을 읽었거나(실시간), 상자 안에서 움직였거나, 들렸거나(들린 것은 닿은 것이다)
-            "B6": ((contact_N is not None and float(contact_N) > THRESHOLD["touch_N"])
-                   or moved_mm > THRESHOLD["touch_moved_mm"] or lifted),
+            # 닿았다 = 상품에 붙은 접촉 센서가 팔꿈치 아래 로봇 바디와 이만큼 세게 닿았다. 그것 하나뿐이다.
+            # 상품이 움직였다는 것도, 들렸다는 것도 여기서는 안 본다 (위 THRESHOLD["touch_N"] 주석 참고).
+            "B6": contact_N is not None and float(contact_N) > THRESHOLD["touch_N"],
             "B7": lifted,
             "B8": float(p[2]) > self.rim,
         }
@@ -357,6 +360,7 @@ class ProductScorer:
                 self.ever[k] = int(t)
                 if k == "B6":
                     self.moved_at_touch_mm = moved_mm
+                    self.contact_at_touch_N = float(contact_N)
         self.last = (int(t), p, tuple(float(v) for v in product_quat),
                      np.asarray(crate_pos, dtype=float), tuple(float(v) for v in crate_quat),
                      shelf, contact_N, speed_mm_s)
@@ -400,6 +404,7 @@ class ProductScorer:
             pts[k] = POINTS[k] if self.ever[k] is not None else 0
         m["moved_in_crate_max_mm"] = round(self.moved_max_mm, 1)
         m["moved_at_touch_mm"] = None if self.moved_at_touch_mm is None else round(self.moved_at_touch_mm, 1)
+        m["contact_at_touch_N"] = None if self.contact_at_touch_N is None else round(self.contact_at_touch_N, 2)
         m["lift_max_mm"] = round(self.lift_max_mm, 1)
         m["rim_z"] = round(self.rim, 4)
 
@@ -554,6 +559,10 @@ def score_npz(path, products=None, end_frame=None):
         key = f"obj/held{region}"
         if key not in z.files:
             continue
+        # 접촉 센서 값. 이 상품에 붙은 센서가 팔꿈치 아래 로봇 바디와 닿은 힘이고, 단위는 N,
+        # 길이는 기록 프레임 수와 같다. 이 칸이 없는 기록(2026-09-21 이전에 모은 것)은 None 이
+        # 넘어가고, 그러면 B6 는 0점이 된다 -- 닿았는지 아닌지를 잴 것이 없기 때문이다.
+        CT = z[f"contact/held{region}"] if f"contact/held{region}" in z.files else None
         if name not in gap_of:
             out.append({"product": name, "error": "이 상품의 빈 칸이 scene.gaps 에 없다"})
             continue
@@ -612,7 +621,7 @@ def score_npz(path, products=None, end_frame=None):
             speed = None if t == 0 else float(np.linalg.norm(P[t, :3] - P[t - 1, :3])) * 1000.0 * hz
             sc.update(t, P[t, :3], P[t, 3:7], C[t, :3], C[t, 3:7],
                       {k: (S[k][t, :3], tuple(float(v) for v in S[k][t, 3:7])) for k in S},
-                      contact_N=None, speed_mm_s=speed)
+                      contact_N=(None if CT is None else float(CT[t])), speed_mm_s=speed)
             if sc.done:          # 떨어져서 스스로 끝났다 -- 그 뒤 프레임은 안 본다
                 break
         r = sc.finish(why)
@@ -646,8 +655,8 @@ def reasons(r):
     """항목마다 점수 옆에 붙일 근거 한 토막 -- 표(fmt_result)와 재생 로그(task_b_replay.py)가 같은 문구를 쓴다."""
     m = r["measured"]
     return {
-        "B6": (f"닿은 순간 상자 안에서 {m['moved_at_touch_mm']:.1f} mm 움직임" if m["moved_at_touch_mm"] is not None
-               else f"상자 안에서 최고 {m['moved_in_crate_max_mm']:.1f} mm 움직임 (문턱 {THRESHOLD['touch_moved_mm']})"),
+        "B6": (f"닿은 순간 접촉 {m['contact_at_touch_N']:.2f} N" if m["contact_at_touch_N"] is not None
+               else f"접촉 센서가 {THRESHOLD['touch_N']} N 을 넘은 프레임 없음"),
         "B7": f"최고 {m['lift_max_mm']:+.0f} mm",
         "B8": f"테두리 {m['rim_z']:.3f}",
         "B9": "", "B10": "",
