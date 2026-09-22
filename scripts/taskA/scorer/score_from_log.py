@@ -373,7 +373,79 @@ def measure_one(head, a, scene, th):
     # 첫 프레임이 낙하로 찍힌다 -- 그때 바구니는 탁상 위에 그냥 놓여 있고, 그것은 ①②를
     # 만족한다.  2026-09-01 실측: 집기 로그가 "0.0초에 낙하" 로 찍혔다.
     ever_held = np.maximum.accumulate(on_robot.astype(np.int8)) > 0
-    dropped = (ever_held & ~on_robot & (nonrobot > th["CONTACT_N"]) & (~on_top))
+    # **한 번도 쥐고 들어올린 적이 없으면 떨어뜨릴 수도 없다** (2026-09-22, 참가자 이슈).
+    #
+    # `on_top` 은 **목표 책상 하나만** 안다 (`scene["desk"]`).  출발 탁상은 거기서 10 m 밖이라
+    # `over_mm` 이 9,849~10,294 mm 로 나온다 -- 그것은 결함이 아니라 맞는 값이다 (바구니가
+    # 정말로 책상 밖에 있다).  그래서 **집기 구간 내내 `~on_top` 이 참**이고, 낙하를 막는
+    # 것은 `on_robot` 하나뿐이었다.
+    #
+    # 그런데 `nonrobot` 은 그 구간에서 **언제나 문턱 위**다.  탁상이 바구니 무게를 받치고
+    # 있기 때문이다 -- 실측 `gt/kin_0_pick.npz` 170 프레임 전부 11.772 N (1.2 kg x 9.81),
+    # 문턱은 0.5 N.  그러니 집게를 한 번 오므렸다(`ever_held` 가 켜진다) 펴는 순간 네 조건이
+    # 동시에 참이 되어, 바구니가 탁상 위에 **가만히 놓여 있는데도** 낙하로 판이 끝났다.
+    # 실측: 2.2~5.0 초에 종료, 0/21.
+    #
+    # 고치는 자리를 `on_top` 이 아니라 여기로 잡은 이유: 출발 탁상을 등록하려면 씬에 새 값을
+    # 실어야 하고 반경 문턱을 새로 지어내야 한다.  **들어올림은 이미 있는 `LIFT_OK_MM` 로
+    # 끝난다.**  라이브 판정기(`cstore-challenge` `mdp/taska_judge.py:593`)가 같은 규칙을
+    # 이미 쓴다 -- `self.passed["1_lift_grip"] and not on_robot and ...`.
+    #
+    # **문은 `A1_lift_grip` 그 자체다.  새 규칙도 새 문턱도 없다.**  평가표의 그 항목이
+    # 「바구니가 `LIFT_OK_MM` 이상 떠올랐고 같은 프레임에 그리퍼가 물었나」이고, 라이브
+    # 판정기도 낙하를 그 항목이 잠긴 뒤에만 본다
+    # (`cstore-challenge` `mdp/taska_judge.py:593` -- `self.passed["1_lift_grip"] and …`).
+    #
+    # **기준면은 씬이 말하는 스폰 높이다.**  라이브 판정기가 쓰는 값과 같은 것이다
+    # (`taska_events.py:262` -> `measured["crate_start_z"]`, `taska_judge.py:527`).
+    # *그 조각의* 첫 프레임을 기준으로 삼으면 안 된다 -- 앞 조각에서 이미 들어올린 판은
+    # 상승이 잡히지 않는다.  실측 꾸러미 로그: `carry`·`place` 는 첫 프레임부터 스폰보다
+    # 102~148 mm 위인데 **조각 기준으로는 최대 0.4~17.5 mm** 다.  그 상태로 두면 나르다·
+    # 놓다 떨어뜨린 판이 낙하로 안 찍힌다.
+    #
+    # 씬이 안 말해 주면 로그 첫 프레임으로 떨어진다.  **판 전체 로그에서는 첫 프레임이 곧
+    # 스폰이라 같은 값**이고(실측 `demos/demo_06.npz` 차이 0.00 mm), 조각 로그는 스폰을
+    # 알 길이 없으므로 그 사실을 메모로 남긴다.
+    _crate_spawn = (scene.get("crate") or {}).get("pos")
+    if _crate_spawn is not None:
+        _start_z = float(_crate_spawn[2])
+    else:
+        _start_z = float(a["crate_pos"][0, 2])
+        out["notes"].append(
+            "씬에 바구니 스폰 높이(`crate.pos`)가 없어 **로그 첫 프레임을 기준면으로 삼았다** — "
+            "판 전체 로그면 같은 값이지만, 앞 조각에서 이미 들어올린 조각이라면 들림이 "
+            "안 잡혀 낙하를 놓칠 수 있다")
+    _rise_mm = (a["crate_pos"][:, 2] - _start_z) * 1000.0
+    _lift_here = _rise_mm >= th["LIFT_OK_MM"]
+    # **쥠을 읽을 수 있는 로그에서만 쥠 조건을 건다.  그리고 경로를 보고 가른다.**
+    # 이 파일은 접촉을 세 경로로 읽고, 그리퍼 신호의 출처가 경로마다 다르다:
+    #
+    #   기하 경로(`head["kinematic"]`)  on_grip = 손가락 근접·벌림   -> 언제나 측정값이다
+    #   힘 경로 / 대체 경로             on_grip = grip_max > 문턱    -> `grip_force` 가 있어야 한다
+    #
+    # `grip_max` 만 보면 **기하 경로가 「그리퍼 열 없음」으로 잘못 빠진다** -- 꾸러미 판정
+    # 로그들은 물리를 안 돌려 `grip_force` 가 통째로 0 이지만 기하 신호는 멀쩡하다.  실제로
+    # 한 번 그렇게 짰고, 정답지 대조에서 메모가 3 판 x 3 조각 = 9 건 붙어 드러났다
+    # (점수는 그대로라 숫자만 봐서는 안 보인다).
+    #
+    # 힘 경로에서 `grip_force` 가 판 내내 정확히 0 이면 그것은 「0 이라는 측정」이 아니라
+    # **「빠진 열」**이다 -- `demos/demo_06.npz` 는 바구니가 163 mm 올라가는데 `grip_force` 와
+    # `crate_robot_force` 최대가 둘 다 0.000 이고, 바구니가 저절로 올라갈 수는 없다.
+    # 이 파일이 접촉 열이 없을 때 쓰는 방식(위쪽 "그리퍼로 대신 읽었다" 메모)과 같게,
+    # 대신 읽고 메모를 남긴다.
+    #
+    # **남는 한계를 적어 둔다**: 그 대체 상태에서는 「쥐고 들었다」와 「부딪혀 튀어 올랐다」를
+    # 가를 방법이 없다 (평가 서버 몽키패치도 같은 한계다 -- `3beed43`).  실제 평가 트레이스는
+    # `grip_force` 를 싣고 운영 씬은 `crate` 를 실으므로(`scene_from_seed.py:203`) 운영
+    # 채점에는 이 가지가 안 닿는다.
+    if bool(head.get("kinematic")) or float(np.max(grip_max)) > 0.0:
+        _lift_here = _lift_here & gripped
+    else:
+        out["notes"].append(
+            "이 로그에는 그리퍼 힘(grip_force)이 통째로 0 이다 — **들림을 높이로만 판정했다**. "
+            "부딪혀 튀어 오른 것과 쥐고 들어올린 것을 가르지 못한다")
+    _lifted = np.maximum.accumulate(_lift_here.astype(np.int8)) > 0
+    dropped = (ever_held & ~on_robot & (nonrobot > th["CONTACT_N"]) & (~on_top) & _lifted)
     hit_now = a["hit_now"] > 0.5
 
     # ── 매장 이탈 -- 발자국이 안쪽 면을 넘으면 그 프레임에서 판을 끝낸다 ──────────────
@@ -670,9 +742,26 @@ def merge(parts):
     m = {"ended": "time_limit"}
     worst_hit, worst_desk = None, None
     for p in parts:
-        for k in ("lift", "place", "watch"):
+        for k in ("place", "watch"):
             if k in p:
                 m[k] = p[k]
+        # 들어올림도 **더 나은 쪽**을 남긴다 (`arrive` 와 같은 이유).
+        #
+        # 예전에는 `if seg == "pick":` 가 이 값을 집기 조각에서만 냈기 때문에 마지막-승자로
+        # 덮어써도 해가 없었다.  위쪽에서 토막 이름을 **안 믿기로** 바꾸면서(그 이름이 곧
+        # 공격면이었다) 모든 조각이 `lift` 를 내게 됐는데, 그때 여기를 같이 안 고쳤다.
+        # 그래서 놓기 조각의 들림(책상에 내려놓는 동안의 2.77 mm, 안 물고 있음)이 집기
+        # 조각의 것(106.37 mm, 물고 있음)을 덮어 `picked` 3 점이 통째로 사라졌다 --
+        # 꾸러미 정답지 대조 실측 2026-09-22: seed 0·2·6 이 21/21 이어야 하는데 18/21 이고
+        # 여섯 항목 중 어긋난 것은 `picked` 하나였다.
+        #
+        # 「한 번이라도 쥐고 들었으면」이므로 한 조각에서 통과했으면 판 전체로 통과다.
+        if "lift" in p:
+            cur = m.get("lift")
+            if cur is None or (p["lift"].get("gripped") and not cur.get("gripped")) or (
+                    bool(p["lift"].get("gripped")) == bool(cur.get("gripped"))
+                    and (p["lift"].get("peak_mm") or -1e9) > (cur.get("peak_mm") or -1e9)):
+                m["lift"] = p["lift"]
         # 도착은 두 조각에서 나오므로 **더 나은 쪽**을 남긴다.  [한 번이라도] 이므로
         # 한 조각에서 통과했으면 판 전체로 통과다.
         if "arrive" in p:
