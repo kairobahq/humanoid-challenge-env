@@ -617,6 +617,124 @@ if len(set(_scores.values())) != 1:
     FAIL.append("책상 높이만 바꿨는데 점수가 갈린다 %r -- 기준면이 책상을 안 따라간다" % _scores)
 
 
+# ── 2026-09-23: 「놓았다」는 집게로 보고, 누르다 밀면 6 초 0 점 ─────────────────────────
+#
+# 사용자 결정: "그냥 얹으면 되는 걸로 하자. 근데, 누르다가 상자가 움직이면, 가점을 부여하지
+# 않는 걸로 하자."  job122 ep0·ep1 은 집게를 끝까지 연 손을 테두리에 얹어 35~38 N 이 잡혔고
+# 앞 판에서 얹기·6 초가 0 점이었다.
+#
+# 모두 **힘 경로**(`_HD`)로 돈다 -- 기하 경로는 원래 이 판정이었고, 바뀐 것은 힘 경로다.
+# 정답 주행의 집게는 프레임 `_r` 에서 풀린다 (벌림 49.7 -> 60.4 mm).
+_hh = SFL.GRIP.held(A["grip_pos"], A["crate_pos"], A["crate_quat"], SFL.TL_BASKET_SIZE)[0]
+_r = int(np.flatnonzero(_hh)[-1]) + 1
+
+
+def _rest(force_after):
+    """놓기까지는 쥐고, 그 뒤로는 로봇 접촉 `force_after` N 이 남은 채 책상이 받친다."""
+    a = _physics({k: np.array(v, copy=True) for k, v in A.items()}, _i0)
+    a["crate_robot_force"][_i0:] = force_after
+    return a
+
+
+def _score_hd(a):
+    return R.score(SFL.merge([SFL.measure_one(copy.deepcopy(_HD), a, SCENE, TH)]))
+
+
+def _qmul(p, q):
+    w1, x1, y1, z1 = p
+    w2, x2, y2, z2 = q
+    return np.array([w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2, w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+                     w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2, w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2])
+
+
+def _push(a, dx_m=0.0, yaw_deg=0.0, k0=5, k1=25):
+    """놓은 뒤 `k0`~`k1` 프레임 동안 바구니를 밀거나 돌리고 그 자리에 멈춘다."""
+    for i in range(_r + k0, len(a["t"])):
+        f = min(1.0, (i - _r - k0) / float(k1 - k0))
+        a["crate_pos"][i, 0] += dx_m * f
+        if yaw_deg:
+            h = np.radians(yaw_deg * f) / 2.0
+            a["crate_quat"][i] = _qmul((np.cos(h), 0.0, 0.0, np.sin(h)),
+                                       a["crate_quat"][i].astype(np.float64))
+    return a
+
+
+# ① 편 손을 얹어 둔 채 30 N -- 집게는 풀었다 -> 얹기·6 초 둘 다 받는다
+_r0, _r30 = _score_hd(_rest(0.0)), _score_hd(_rest(30.0))
+for _k in ("placed", "stayed"):
+    if not _r30["items"][_k]["got"]:
+        FAIL.append("집게를 풀고 손만 얹었는데(30 N) %s 를 못 받았다 -- %s"
+                    % (_k, _r30["items"][_k]["why"][:60]))
+if _r30["total"] != _r0["total"]:
+    FAIL.append("손을 얹은 판(%g)과 뗀 판(%g)의 점수가 다르다" % (_r30["total"], _r0["total"]))
+
+# ② 누르다 25 mm 밀었다 -> 6 초 0 점 (얹기는 그대로)
+_rp = _score_hd(_push(_rest(30.0), dx_m=0.025))
+if _rp["items"]["stayed"]["got"] is not False or "모서리" not in _rp["items"]["stayed"]["why"]:
+    FAIL.append("누르다 25 mm 밀었는데 6 초 항목이 %s 다 -- %s"
+                % (_rp["items"]["stayed"]["got"], _rp["items"]["stayed"]["why"][:60]))
+if not _rp["items"]["placed"]["got"]:
+    FAIL.append("밀리기 전에 얹었는데 얹기를 못 받았다")
+
+# ③ 제자리에서 30 도 돌렸다 -- 중심은 안 움직인다 -> 그래도 6 초 0 점
+_rr = _score_hd(_push(_rest(30.0), yaw_deg=30.0))
+if _rr["items"]["stayed"]["got"] is not False:
+    FAIL.append("누르다 제자리에서 30 도 돌렸는데 6 초를 받았다 -- 중심만 재고 있다")
+
+# ④ 14 mm (job122 ep1 이 얹고 눌러 14.56 mm) -> 통과
+_r14 = _score_hd(_push(_rest(30.0), dx_m=0.014))
+if not _r14["items"]["stayed"]["got"]:
+    FAIL.append("모서리 14 mm 밀림이 6 초 0 점이 됐다 -- 문턱은 20 mm 다 (%s)"
+                % _r14["items"]["stayed"]["why"][:60])
+
+# ⑤ 놓고 2 초 뒤 다시 물고 끝까지 안 놓는다 -> 6 초 0 점
+_rg = _rest(30.0)
+_noff2 = np.zeros((A["grip_pos"].shape[1], 3), np.float32)
+_noff2[:, 1] = ((np.arange(A["grip_pos"].shape[1]) % 4) // 2) * 0.030 - 0.015
+_rg["grip_pos"][_r + 20:] = (_rg["crate_pos"][_r + 20:, None, :]
+                             + _noff2[None, :, :]).astype(A["grip_pos"].dtype)
+if _score_hd(_rg)["items"]["stayed"]["got"] is not False:
+    FAIL.append("창 안에서 집게로 다시 물고 끝까지 있었는데 6 초를 받았다")
+
+# ⑥ 놓은 뒤 손가락 좌표가 빈 값이다 -> 「놓았다」로 새지 않는다
+_nn = _rest(30.0)
+_nn["grip_pos"] = _nn["grip_pos"].astype(np.float64)
+_nn["grip_pos"][_r:] = np.nan
+_pn = SFL.measure_one(copy.deepcopy(_HD), _nn, SCENE, TH)
+if (_pn.get("watch") or {}).get("opened") or (_pn.get("place") or {}).get("released_any"):
+    FAIL.append("손가락 좌표가 빈 프레임이 「놓았다」로 읽혔다 -- NaN 이 유리하게 샌다")
+if (_pn.get("release_rule") or {}).get("nan_frames", 0) != len(A["t"]) - _r:
+    FAIL.append("빈 프레임 수가 메모에 안 남았다: %r" % _pn.get("release_rule"))
+
+# ⑦ 책상 8 cm 위에서 놓아 떨어뜨렸다 -> 프레임을 어떻게 솎아도 6 초 0 점
+#    창은 집게가 풀린 순간에 연다.  앞 판은 「상판 ±50 mm」 조건 때문에 떨어지는 도중
+#    어느 프레임이 찍히느냐로 갈렸다.
+_hi = _physics({k: np.array(v, copy=True) for k, v in A.items()}, _r + 2)
+_lift = np.zeros(len(A["t"]))
+_lift[_r - 20:_r] = np.linspace(0.0, 0.080, 20)       # 놓기 전 2 초 동안 8 cm 들어 올린다
+_lift[_r:] = 0.080
+_hi["crate_pos"][:_r, 2] += _lift[:_r]
+_hi["grip_pos"][:, :, 2] += _lift[:, None]
+_hi["crate_pos"][_r, 2] = _top + 0.080                 # 놓는 순간 8 cm 위
+_hi["crate_pos"][_r + 1, 2] = _top + 0.040             # 떨어지는 중
+for _off in (0, 1):
+    _sub = {k: v[_off::2] for k, v in _hi.items()}
+    _ph = SFL.measure_one(copy.deepcopy(_HD), _sub, SCENE, TH)
+    if _ph.get("stopped_why") == "dropped":
+        FAIL.append("책상 위 8 cm 에서 놓은 판(솎음 %d)이 낙하로 끝났다" % _off)
+    elif R.score(SFL.merge([_ph]))["items"]["stayed"]["got"] is not False:
+        FAIL.append("책상 8 cm 위에서 놓았는데(솎음 %d) 6 초를 받았다 -- 받침 %r"
+                    % (_off, (_ph.get("watch") or {}).get("seat_mm")))
+
+# ⑧ 한 번도 안 잡은 판 -> 창이 안 열리고, 판은 `ok` 가 아니라 `time_limit` 이다
+_pv = SFL.measure_one(copy.deepcopy(HEAD), _never, SCENE, TH)
+if (_pv.get("watch") or {}).get("opened"):
+    FAIL.append("한 번도 안 잡았는데 감시창이 열렸다 -- 「한 번 물었던 뒤로」가 빠졌다")
+if SFL.merge([_pv])["ended"] != "time_limit":
+    FAIL.append("한 번도 안 잡은 판이 %r 로 끝났다 -- time_limit 이어야 한다"
+                % SFL.merge([_pv])["ended"])
+
+
 if FAIL:
     print("실패 %d건" % len(FAIL))
     for f in FAIL:
