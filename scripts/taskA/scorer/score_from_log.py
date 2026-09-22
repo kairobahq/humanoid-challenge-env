@@ -168,6 +168,17 @@ def _overhang_mm(corners, desk_xy, desk_size):
     return out.max(axis=1) * 1000.0
 
 
+def _overhang_round_mm(corners, centre_xy, radius_m):
+    """**원형** 상판 밖으로 나간 최대 거리 (mm).  안에 다 들어가면 0.
+
+    `_overhang_mm` 의 원형판이다 -- 식사공간 탁상은 사각이 아니라 원이고, 씬이 중심과
+    반지름으로 준다 (`furniture.tables`).  **두 함수는 같은 것을 재므로 한쪽만 고치지 말 것.**
+    """
+    c = np.asarray(centre_xy, dtype=np.float64)[None, None, :]
+    d = np.linalg.norm(corners - c, axis=2)
+    return np.maximum(d.max(axis=1) - float(radius_m), 0.0) * 1000.0
+
+
 def measure_one(head, a, scene, th):
     """조각 하나에서 답할 수 있는 것만 답한다.  못 답하는 것은 열쇠를 아예 안 넣는다."""
     seg = head.get("segment", "?")
@@ -307,6 +318,40 @@ def measure_one(head, a, scene, th):
     # **여기에는 멈춤 조건을 걸지 않는다.**  튕기는 중인 바구니가 낙하로 찍히면 안 된다.
     on_top = (np.abs(seat_mm) <= th["SEAT_NEAR_MM"]) & (over_mm <= 500.0)
 
+    # **목표 책상만이 「놓아도 되는 자리」인 것이 아니다** (사용자 결정 2026-09-22).
+    #
+    # 앞 판은 이 배열이 `scene["desk"]` 하나만 알았다.  그래서 로봇이 바구니를 집었다가
+    # **출발할 때 놓여 있던 식탁에 도로 내려놓고 손을 떼면**, 바구니가 멀쩡히 탁상 위에
+    # 있는데도 「책상도 아닌 데서 손을 놨다 = 낙하」로 읽혀 판이 끝났다.  실측: 쥐고
+    # 106 mm 들었다가 탁상(0.750 m)에 도로 놓는 합성 판이 11.4 초에 `dropped` 로 끝났고
+    # **두 번째 파지는 시작도 못 했다.**  한 번 놨다가 다시 잡는 것은 정책이 흔히 하는
+    # 정상 동작이라, 이대로 두면 멀쩡한 시도가 계속 잘려 나간다.
+    #
+    # 씬이 식사공간 탁상 세 개를 **중심·반지름·상판높이로 이미 준다**
+    # (`furniture.tables` -- 꾸러미 씬과 실제 평가 씬 양쪽에 들어 있다).  그러니 새 값을
+    # 실을 필요도, 새 문턱을 지어낼 필요도 없다 -- **책상에 쓰는 두 자(`SEAT_NEAR_MM` 와
+    # 500 mm)를 그대로** 원형 탁상에 댄다.
+    #
+    # 실측(같은 식을 그대로 걸어 본 것): 꾸러미 집기 로그는 첫 프레임 참 -> 들어올리면
+    # 거짓(80/170), 주행 0/1034, 놓기 0/269.  실제 평가 로그(job122-ep0)는 288/2089 로
+    # 첫 프레임 참 -> z 0.800 에서 거짓.  **헛되이 켜지는 구간이 없다.**
+    #
+    # 탁상 목록이 없는 옛 씬이면 지금까지와 똑같이 동작하고, 그 사실을 메모에 남긴다.
+    _tables = ((scene.get("furniture") or {}).get("tables")
+               if isinstance(scene, dict) else None) or []
+    if _tables:
+        for _tb in _tables:
+            _tz, _c, _r = _tb.get("top_z"), _tb.get("centre"), _tb.get("radius")
+            if _tz is None or _c is None or _r is None:
+                continue
+            _seat_tb = np.abs(a["crate_pos"][:, 2] - float(_tz)) * 1000.0
+            _over_tb = _overhang_round_mm(corners, _c, _r)
+            on_top = on_top | ((_seat_tb <= th["SEAT_NEAR_MM"]) & (_over_tb <= 500.0))
+    else:
+        out["notes"].append(
+            "씬에 식사공간 탁상 목록(`furniture.tables`)이 없어 **목표 책상만 「놓아도 되는 "
+            "자리」로 보았다** — 출발 탁상에 도로 내려놓는 판이 낙하로 찍힐 수 있다")
+
     # **「제대로 얹혔다」를 한 곳에서만 정한다.**
     #
     # 「책상 상판에 얹었는가」와 「목적지에 도착했는가」가 둘 다 이 배열을 쓴다 (도착은
@@ -375,10 +420,10 @@ def measure_one(head, a, scene, th):
     ever_held = np.maximum.accumulate(on_robot.astype(np.int8)) > 0
     # **한 번도 쥐고 들어올린 적이 없으면 떨어뜨릴 수도 없다** (2026-09-22, 참가자 이슈).
     #
-    # `on_top` 은 **목표 책상 하나만** 안다 (`scene["desk"]`).  출발 탁상은 거기서 10 m 밖이라
-    # `over_mm` 이 9,849~10,294 mm 로 나온다 -- 그것은 결함이 아니라 맞는 값이다 (바구니가
-    # 정말로 책상 밖에 있다).  그래서 **집기 구간 내내 `~on_top` 이 참**이고, 낙하를 막는
-    # 것은 `on_robot` 하나뿐이었다.
+    # 앞 판에서는 `on_top` 이 **목표 책상 하나만** 알았다 (`scene["desk"]`).  출발 탁상은
+    # 거기서 10 m 밖이라 `over_mm` 이 9,849~10,294 mm 로 나온다 -- 그것은 결함이 아니라
+    # 맞는 값이다 (바구니가 정말로 책상 밖에 있다).  그래서 **집기 구간 내내 `~on_top` 이
+    # 참**이었고, 낙하를 막는 것은 `on_robot` 하나뿐이었다.
     #
     # 그런데 `nonrobot` 은 그 구간에서 **언제나 문턱 위**다.  탁상이 바구니 무게를 받치고
     # 있기 때문이다 -- 실측 `gt/kin_0_pick.npz` 170 프레임 전부 11.772 N (1.2 kg x 9.81),
@@ -386,10 +431,16 @@ def measure_one(head, a, scene, th):
     # 동시에 참이 되어, 바구니가 탁상 위에 **가만히 놓여 있는데도** 낙하로 판이 끝났다.
     # 실측: 2.2~5.0 초에 종료, 0/21.
     #
-    # 고치는 자리를 `on_top` 이 아니라 여기로 잡은 이유: 출발 탁상을 등록하려면 씬에 새 값을
-    # 실어야 하고 반경 문턱을 새로 지어내야 한다.  **들어올림은 이미 있는 `LIFT_OK_MM` 로
-    # 끝난다.**  라이브 판정기(`cstore-challenge` `mdp/taska_judge.py:593`)가 같은 규칙을
-    # 이미 쓴다 -- `self.passed["1_lift_grip"] and not on_robot and ...`.
+    # **구멍이 둘이고, 고치는 자리가 다르다.**
+    #   들기 **전**에 스치는 것      -> 이 문(`_lifted`).  한 번도 쥐고 든 적이 없으면 못 떨어뜨린다
+    #   들고 **난 뒤** 도로 놓는 것  -> 위의 `on_top`.  등록된 탁상 위도 「놓아도 되는 자리」다
+    # 이 문은 한 번 열리면 안 닫히므로 뒤엣것을 못 막는다.  둘 다 필요하다.
+    #
+    # **앞서 이 자리에 틀린 말이 적혀 있었다.**  "출발 탁상을 등록하려면 씬에 새 값을 실어야
+    # 하고 반경 문턱을 새로 지어내야 한다"고 적었는데 **아니다** -- `furniture.tables` 에 세
+    # 탁상이 중심·반지름·상판높이로 **이미 채워져 있다**.  `scene_spec.py` 의 `tables: None`
+    # 은 **서식의 빈칸**이지 "아무도 안 채운다"는 뜻이 아니었고, 데이터를 안 보고 서식을
+    # 보고 단정했다.
     #
     # **문은 `A1_lift_grip` 그 자체다.  새 규칙도 새 문턱도 없다.**  평가표의 그 항목이
     # 「바구니가 `LIFT_OK_MM` 이상 떠올랐고 같은 프레임에 그리퍼가 물었나」이고, 라이브
