@@ -104,6 +104,26 @@ THRESHOLD = {
                              #     진동으로도 상품은 움직이고, 그러면 그리퍼가 상품에 한 번도 안 닿은 판이 점수를 받는다.
                              #     실제로 평가 서버에서 그렇게 받은 판이 있었다 (제출 #39, A1_touch 1점, 접촉 0.0 N).
                              #     0.5 N 은 평가 환경의 판정기 `taskb_restock_judge.py` 의 `touch_N` 과 같은 값이다
+    "grip_contact_min_n": 0.5,
+                             # B7·B8 「쥐고 있다」를 정하는 값 (사용자 결정 2026-09-22: 부하가 아니라 **접촉**으로).
+                             #     상품에 붙은 접촉 센서가 그리퍼 마디와 이보다 세게 닿은 프레임을 「닿음」으로 보고,
+                             #     그것이 grip_hold_s 이상 이어진 구간을 「쥐고 있다」로 본다. 0.5 N 은 touch_N 과 같은 값.
+                             #     실측 2026-09-22 (step 22000, episode 33개 전부 계측): 96 초에 손에 있던 2 개는 접촉이
+                             #     81.80 s · 72.85 s 이어졌고 든 동안에도 61.37 N · 52.43 N 이 걸려 있었다. 한 번 들었다
+                             #     놓친 1 개(92016)는 75.20 s · 201.53 N. 반대로 손을 편 채 B7 2 점을 받은 92024 는
+                             #     접촉이 6.12 N 으로 0.05 초(프레임 2 개)뿐이고 든 동안은 0.00 N 이었다.
+                             #     그 전 규칙(그리퍼 관절 각도/부하)은 **빈손도 통과시킨다** -- step 16000 의 92004 는
+                             #     접촉이 프레임 600 개 전부 0.00 N 인데 B7 2 점을 받았다 (MISTAKES §206).
+    "grip_hold_s": 0.3,      # B7·B8 위 접촉이 이만큼 이어져야 쥔 것으로 본다. 평가 환경 판정기
+                             #     `taskb_restock_judge.py` 의 `grip_hold_s` 와 같은 값이다.
+    "grip_closed_rad": 0.3,  # B7·B8 **접촉 칸이 없는 옛 기록에서만** 쓰는 대체값. 그 프레임에 잡은 손의
+                             #     `gripper_{l|r}_joint1` 이 이 값 이상이면 쥐고 있다고 본다.
+                             #     쥐지 않은 채 오른 상품은 점수가 아니다 (사용자 결정 2026-09-22:
+                             #     *"A1_lift 와 A1_out은 로봇이 상품을 박스에서 잘 들어올렸냐를 평가하는거야"*).
+                             #     실측 2026-09-22: 시연 7판이 쥔 프레임 0.68~0.93 rad, 평가 33판이 쥔 프레임
+                             #     0.63~1.01 rad, 손을 편 채 상품이 오른 프레임은 전부 0.013 rad 이하.
+                             #     0.3 은 그 사이의 빈 구간이다 (덩어리 한가운데에 두지 않는다, MISTAKES §82).
+                             #     열림은 어느 기록에서나 0.000~0.001 rad 라 절대값으로 잰다.
     "lift_mm": 30.0,         # B7  ※ 실측 2026-09-03: 성공한 pick 2,284판의 들어올림 최소 101.8 mm, 30 미만 0판.
                              #     실패한 pick 은 로컬 표본에 없어 「끌린 것」쪽 분포는 못 쟀다
     "near_shelf_mm": 300.0,  # B9  ※ 실측: passed 3,133판 x 최대 최소 0.513, refused 164판 중 160판도 넘음.
@@ -297,14 +317,19 @@ class ProductScorer:
         self.moved_max_mm = 0.0
         self.moved_at_touch_mm = None
         self.contact_at_touch_N = None
+        self.open_lift_frames = 0     # 손을 편 채 상품이 30 mm 넘게 올라가 있던 프레임 수
         self.n = 0
         self.last = None
         self.result = None
 
     # ---- [한 번이라도] ----------------------------------------------------------------------
     def update(self, t, product_pos, product_quat, crate_pos, crate_quat, shelf, contact_N=None,
-               speed_mm_s=None):
+               speed_mm_s=None, held=None):
         """프레임 하나. shelf 는 {열쇠: (pos, quat)}. contact_N 은 상품에 단 센서가 읽은 힘(없으면 None).
+
+        `held` 는 **그 프레임에 로봇이 그 상품을 쥐고 있었나**다 (없으면 None). B7·B8 은 쥔 프레임에서만
+        점수가 된다 -- 쓸어 내거나 쳐서 올라간 것은 들어올린 것이 아니다. None 이면 잴 것이 없으므로
+        예전처럼 위치만 본다.
 
         떨어짐을 스스로 감지한다: 상자 밖으로 나온 뒤(B8) 상품이 어느 판에도 안 놓인 채 바닥에 밑면을
         대는 그 프레임에 finish("dropped") 를 부르고 `done` 이 된다 -- 시트: "상품이 바닥에
@@ -344,9 +369,12 @@ class ProductScorer:
             # 닿았다 = 상품에 붙은 접촉 센서가 팔꿈치 아래 로봇 바디와 이만큼 세게 닿았다. 그것 하나뿐이다.
             # 상품이 움직였다는 것도, 들렸다는 것도 여기서는 안 본다 (위 THRESHOLD["touch_N"] 주석 참고).
             "B6": contact_N is not None and float(contact_N) > THRESHOLD["touch_N"],
-            "B7": lifted,
-            "B8": float(p[2]) > self.rim,
+            # **쥔 채로여야 점수다** (사용자 결정 2026-09-22). `held` 를 안 주면 예전처럼 위치만 본다.
+            "B7": lifted and (held is not False),
+            "B8": float(p[2]) > self.rim and (held is not False),
         }
+        if lifted and held is False:
+            self.open_lift_frames += 1
         # 사다리 순서: 선반 앞 · 목표 층 높이 · 목표 칸 앞은 **상자 밖으로 꺼낸 뒤부터** 센다 (사용자 2026-09-03).
         # 안 그러면 3층 목표에서는 상자 속에 그냥 놓인 상품(중심 0.755~0.790)이 판 윗면 0.7461 을 이미 넘어
         # 프레임 0에 B10 을 통과한다.
@@ -406,6 +434,7 @@ class ProductScorer:
         m["moved_at_touch_mm"] = None if self.moved_at_touch_mm is None else round(self.moved_at_touch_mm, 1)
         m["contact_at_touch_N"] = None if self.contact_at_touch_N is None else round(self.contact_at_touch_N, 2)
         m["lift_max_mm"] = round(self.lift_max_mm, 1)
+        m["open_lift_frames"] = self.open_lift_frames
         m["rim_z"] = round(self.rim, 4)
 
         # B12 -- 시트: 떨어뜨려서 끝난 것이 아니면 통과. 「떨어뜨렸다」는 **편의점 바닥**에 떨어진 것뿐이다 (사용자
@@ -526,6 +555,33 @@ def load_npz(path):
     return z, meta, scene
 
 
+def held_by_contact(CT, hz: float):
+    """프레임마다 「쥐고 있나」 -- 상품과 그리퍼 마디의 접촉으로 정한다 (사용자 결정 2026-09-22).
+
+    `CT` 는 `state.npz` 의 `contact/grip{N}` 칸(그리퍼 마디와 닿은 힘, N)이다. `grip_contact_min_n` 이상인
+    프레임이 `grip_hold_s` 이상 **끊기지 않고** 이어지면, 그 구간 전체를 쥔 것으로 본다.
+
+    왜 이어진 시간을 보나: 한 프레임 스치는 것은 쥔 것이 아니다. 2026-09-22 의 step 22000 에서
+    B7 2 점을 잘못 받은 92024 는 접촉이 6.12 N 으로 두 프레임(0.05 초)뿐이었고, 진짜로 쥔 셋은
+    72.85~81.80 초였다.
+    """
+    on = np.asarray(CT, dtype=np.float32) >= THRESHOLD["grip_contact_min_n"]
+    need = max(1, int(round(THRESHOLD["grip_hold_s"] * hz)))
+    out = np.zeros(on.shape[0], dtype=bool)
+    i = 0
+    while i < on.shape[0]:
+        if not on[i]:
+            i += 1
+            continue
+        j = i
+        while j < on.shape[0] and on[j]:
+            j += 1
+        if j - i >= need:
+            out[i:j] = True
+        i = j
+    return out
+
+
 def score_npz(path, products=None, end_frame=None):
     """State npz 한 판을 채점한다. 상자 속 상품마다 결과 하나. `products` 로 고르지 않으면
     meta.pick_product, 그것도 없으면 상자 속 전부.
@@ -551,6 +607,16 @@ def score_npz(path, products=None, end_frame=None):
     watch = max(1, int(round(THRESHOLD["watch_s"] * hz)))
     J = z["all_joint_pos"] if "all_joint_pos" in z.files else None
     jnames = list(meta.get("joint_names") or [])
+    # **쥐고 있는가** -- 잡은 손의 gripper 관절 하나로 잰다 (사용자 결정 2026-09-22). 어느 손인지는
+    # meta.pick_hand, 없으면 판 안에서 더 많이 움직인 쪽(놓기만 있는 기록도 그 손이 열린다).
+    # 관절 기록이 없으면 None 이 넘어가고 B7·B8 은 예전처럼 위치만 본다.
+    _gi = {h: jnames.index(f"gripper_{h}_joint1") for h in "lr" if f"gripper_{h}_joint1" in jnames}
+    HELD_JOINT = None
+    if J is not None and _gi:
+        _hand = meta.get("pick_hand")
+        if _hand not in _gi:
+            _hand = max(_gi, key=lambda h: float(np.ptp(J[:, _gi[h]])))
+        HELD_JOINT = J[:, _gi[_hand]] >= THRESHOLD["grip_closed_rad"]
     out = []
     for region, item in enumerate(crate):
         name = item["product"]
@@ -563,6 +629,14 @@ def score_npz(path, products=None, end_frame=None):
         # 길이는 기록 프레임 수와 같다. 이 칸이 없는 기록(2026-09-21 이전에 모은 것)은 None 이
         # 넘어가고, 그러면 B6 는 0점이 된다 -- 닿았는지 아닌지를 잴 것이 없기 때문이다.
         CT = z[f"contact/held{region}"] if f"contact/held{region}" in z.files else None
+        # **「쥐고 있나」는 그리퍼 마디와의 접촉으로 정한다** (사용자 결정 2026-09-22).
+        # 위 `contact/held{region}` 은 팔꿈치 아래 **모든** 부위와 닿은 힘이라 B6(닿았는가)의 값이고,
+        # 그것으로 쥠을 재면 팔뚝으로 밀어 올린 상품도 쥔 것이 된다. 쥠은 `contact/grip{region}`,
+        # 곧 그리퍼 네 마디만 골라 잰 힘으로 본다 (판정기의 `grip_contact_N` 과 같은 값).
+        # 그 칸이 없는 옛 기록에서만 그리퍼 관절 각도로 물러난다 -- 그 값은 빈손도 통과시키므로
+        # 대체값일 뿐이고, `notes` 에 무엇으로 쟀는지 적는다.
+        CTG = z[f"contact/grip{region}"] if f"contact/grip{region}" in z.files else None
+        HELD = held_by_contact(CTG, hz) if CTG is not None else HELD_JOINT
         if name not in gap_of:
             out.append({"product": name, "error": "이 상품의 빈 칸이 scene.gaps 에 없다"})
             continue
@@ -621,7 +695,8 @@ def score_npz(path, products=None, end_frame=None):
             speed = None if t == 0 else float(np.linalg.norm(P[t, :3] - P[t - 1, :3])) * 1000.0 * hz
             sc.update(t, P[t, :3], P[t, 3:7], C[t, :3], C[t, 3:7],
                       {k: (S[k][t, :3], tuple(float(v) for v in S[k][t, 3:7])) for k in S},
-                      contact_N=(None if CT is None else float(CT[t])), speed_mm_s=speed)
+                      contact_N=(None if CT is None else float(CT[t])), speed_mm_s=speed,
+                      held=(None if HELD is None else bool(HELD[t])))
             if sc.done:          # 떨어져서 스스로 끝났다 -- 그 뒤 프레임은 안 본다
                 break
         r = sc.finish(why)
@@ -657,7 +732,8 @@ def reasons(r):
     return {
         "B6": (f"닿은 순간 접촉 {m['contact_at_touch_N']:.2f} N" if m["contact_at_touch_N"] is not None
                else f"접촉 센서가 {THRESHOLD['touch_N']} N 을 넘은 프레임 없음"),
-        "B7": f"최고 {m['lift_max_mm']:+.0f} mm",
+        "B7": (f"최고 {m['lift_max_mm']:+.0f} mm"
+               + (f" · 손을 편 채 오른 프레임 {m['open_lift_frames']}" if m.get("open_lift_frames") else "")),
         "B8": f"테두리 {m['rim_z']:.3f}",
         "B9": "", "B10": "",
         "B11": "",
