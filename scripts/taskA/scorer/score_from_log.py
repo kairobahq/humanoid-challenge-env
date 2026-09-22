@@ -71,7 +71,8 @@ REGRASP_MIN_S = 0.5
 def _last_release(rel, t, min_regrab_s=REGRASP_MIN_S):
     """마지막으로 손을 뗀 프레임 번호.  없으면 None.
 
-    `rel` 은 프레임마다 「바구니가 로봇에게서 떨어져 있고 책상 상판 위에 있다」이다.
+    `rel` 은 프레임마다 「한 번 물었던 집게가 지금은 바구니를 물고 있지 않다」이다
+    (2026-09-23 까지는 「로봇에게서 떨어져 있고 책상 상판 위」였다 -- `released` 머리말).
     그것이 참인 구간이 여럿이면 구간 사이가 「다시 잡고 있던 시간」이고, 그 시간이
     `min_regrab_s` 보다 짧으면 판정이 튄 것으로 보아 앞뒤를 한 번의 놓기로 잇는다.
 
@@ -251,6 +252,46 @@ def measure_one(head, a, scene, th):
     held = on_robot & free                             # Sub 2# 의 「들고 있다」
     gripped = on_grip & free                           # Sub 1# 의 「물고 있다」
 
+    # ── 「놓았다」는 **집게가 풀렸는가**로 본다 (사용자 결정 2026-09-23) ──────────────────
+    #
+    # 앞 판은 「로봇 어느 부위도 안 닿는다」(`~on_robot`)였다.  job122 는 세 판 모두 집게를
+    # 끝까지 열었는데(벌림 114.5 mm) ep0·ep1 은 **편 손이 바구니 테두리에 얹혀** 접촉력
+    # 35~38 N 이 잡혔고, 그래서 얹기·6 초가 0 점이었다.  우리 학습 데이터 2,492 편도 전부
+    # 집게만 열고 팔을 그 자리에 둔 채 기다린다 -- 참가자는 그것을 따라 했다.  사용자 결정:
+    # "그냥 얹으면 되는 걸로 하자" -- 손·팔이 얹혀 있는 것은 괜찮다.
+    #
+    # **새 판정을 만들지 않는다.**  `grip_geom.held()`(근접 40 mm, 벌림 60 mm)는 기하 경로가
+    # 이미 쓰고, 실시간 판정기의 `grip_state()` 도 같은 두 값이다.  숫자의 출처는 우리 궤적이
+    # 아니라 물리와 기구다:
+    #
+    #   물고 있을 때 벌림        27.4 ~ 34.1 mm   11,116 프레임 (참가자 판도 같은 폭)
+    #   물리가 접촉을 잡은 최대   50.9 mm          7,041 프레임 대조 (grip_geom 머리말)
+    #   끝까지 연 벌림           114.0 ~ 114.7 mm
+    #
+    # 벌림 52~80 × 근접 30~60 mm 로 흔들어도 완결된 로그의 판정이 한 번도 안 바뀐다
+    # (2026-09-23 실측).  그래서 60·40 은 고르는 값이 아니라 **유지하는 값**이다.
+    #
+    # `& free` 를 붙이지 않는다 -- 그러면 책상에 놓인 채 쥐고 있는 바구니가 「안 문다」가
+    # 된다.  **빈 값(NaN)은 「물고 있다」로 본다**: `held()` 는 NaN 에서 거짓을 내므로 그냥
+    # 두면 못 읽은 프레임이 「놓았다」로 **유리하게 샌다**.
+    #
+    # **한 번 물었던 뒤로만** 놓은 것으로 센다 -- 실시간 판정기의 `rel and was_gripped` 와
+    # 같은 뜻이다.  안 그러면 한 번도 안 잡은 판이 첫 프레임에 「놓았다」가 된다.
+    _gp = np.asarray(a["grip_pos"], dtype=np.float64)
+    _nan = (~np.isfinite(_gp).reshape(len(_gp), -1).all(axis=1)
+            | ~np.isfinite(np.asarray(a["crate_pos"], np.float64)).all(axis=1)
+            | ~np.isfinite(np.asarray(a["crate_quat"], np.float64)).all(axis=1))
+    _clamp = GRIP.held(_gp, a["crate_pos"], a["crate_quat"], TL_BASKET_SIZE)[0] & ~_nan
+    grip_held = _clamp | _nan
+    released = (~grip_held) & (np.maximum.accumulate(_clamp) if len(_clamp) else _clamp)
+    out["release_rule"] = {"by": "grip_geom", "near_mm": float(GRIP.NEAR_MM),
+                           "gap_mm": float(GRIP.GAP_MM), "ever_clamped": bool(_clamp.any()),
+                           "nan_frames": int(_nan.sum())}
+    if _nan.any():
+        out["notes"].append(
+            f"손가락·바구니 좌표가 빈 프레임 {int(_nan.sum())}개는 「놓았다고 확인 못 함」"
+            "(= 물고 있음)으로 보았다")
+
     # ── [판 내내] 두 항목은 어느 조각에서나 잰다 ────────────────────────────────────────
     # **충돌은 배열로 판정한다.  머리말을 믿지 않는다.**
     #
@@ -381,14 +422,14 @@ def measure_one(head, a, scene, th):
     # 「얹음」으로 통과한다.  재현했다: 상판에 닿은 65 프레임 내내 턱을 문 사본(벌림 24.8 mm,
     # 기하 파지 65/65)이 얹힘 3 점을 받았다.  이 과제의 뜻은 **놓는 것**이다.
     #
-    # `on_grip` 이 아니라 `on_robot` 을 쓰는 이유는 감시창을 여는 `rel` 과 같다 -- 턱은 폈는데
-    # 팔뚝에 걸쳐 둔 것은 아직 놓은 것이 아니다.
+    # 「놓았다」는 **집게가 풀렸는가**(`released`, 위 「놓았다」 머리말)다 -- 2026-09-23 까지는
+    # `~on_robot`(로봇 어느 부위도 안 닿음)이었고, 편 손을 얹어 둔 판이 0 점이 됐다.
     #
     # **`placed_ok` 자체를 좁히지 않는다.**  좁히면 손을 안 뗀 판의 `out["place"]` 가 숫자
     # 없는 가지로 빠져 채점이 0 점이 아니라 **「못 읽었다」(None)** 가 된다 -- 못 잰 것과
     # 못 한 것은 다른 뜻이고, 그 혼동이 이 채점기가 앞서 새던 방식이다.  그래서 숫자
     # (seat/tilt/overhang)는 그대로 두고 불리언만 따로 낸다.
-    placed_free = placed_ok & (~on_robot)
+    placed_free = placed_ok & released
 
     # ── 판이 끝나는 자리 ────────────────────────────────────────────────────────────────
     #
@@ -567,6 +608,7 @@ def measure_one(head, a, scene, th):
         # `placed_free` 도 같이 자른다 -- 빼먹으면 길이가 어긋나 아래 `.any()` 가 판 전체를
         # 본다.  이 목록에 새 배열을 더할 때마다 여기도 같이 더해야 한다.
         placed_free = placed_free[sl]
+        grip_held, released = grip_held[sl], released[sl]
         seat_mm, over_mm, c_speed = seat_mm[sl], over_mm[sl], c_speed[sl]
         c_speed_reported = c_speed_reported[sl]
         corners = corners[sl]
@@ -731,13 +773,16 @@ def measure_one(head, a, scene, th):
                             # 댄 것이다 -- 높이·자세가 맞아도 얹은 것이 아니다.
                             "released_any": bool(placed_free.any())}
 
-        # 감시창의 시작은 **로봇의 단계가 아니라 바구니의 상태**로 잡는다.
+        # 감시창은 **집게가 풀린 순간**부터 센다 (사용자 결정 2026-09-23: "손 뗀 순간부터",
+        # 평가표 문구 「손 뗀 뒤 6초」 그대로).
         #
-        # 시트: "「바구니가 로봇의 어느 부위와도 닿지 않게 된 첫 프레임」(t_release)".
-        # 그리퍼가 아니라 **로봇 전체**다 -- 턱은 놨는데 팔뚝에 걸쳐 둔 것은 아직 손을 뗀
-        # 것이 아니다.  상판 위일 것을 같이 걸어 둔다: 상판 밖에서 같은 일이 일어나면 그것은
-        # 낙하이고 위에서 이미 판을 끝냈다.
-        rel = (~on_robot) & on_top
+        # 앞 판은 「로봇 어느 부위와도 안 닿고(`~on_robot`) 상판 ±50 mm 안」이었다.  둘 다 뺐다.
+        #   - 로봇 전체 접촉: 편 손을 얹어 둔 판이 창을 영영 못 열었다 (위 「놓았다」 머리말).
+        #   - 상판 ±50 mm: 책상 5 cm 넘는 곳에서 놓으면 **떨어지는 도중 어느 프레임이 찍히느냐**
+        #     로 결과가 갈렸다.  빼면 공중에서 놓은 판은 늘 높이 검사에서 걸린다.  완결된
+        #     여섯 판(GT 3 + job122 3)은 빼도 손 뗀 시각이 한 프레임도 안 바뀐다.
+        # 상판 밖에서 놓아 떨어진 것은 위에서 이미 낙하로 판을 끝냈다.
+        rel = released
         n_rel, r = _last_release(rel, a["t"])
         if r is None:
             out["watch"] = {"opened": False}
@@ -768,7 +813,35 @@ def measure_one(head, a, scene, th):
             # 바로잡으려고 다시 잡는 것은 상관없다 -- 바로잡고 **다시 놓으면** 그 마지막
             # 놓기부터 창을 새로 세기 때문이다.  걸리는 것은 다시 잡고 끝까지 안 놓는
             # 판뿐이고, 그것은 정렬이 아니라 아직 안 놓은 것이다.
+            #
+            # 2026-09-23 부터 「다시 잡았다」는 **집게가 다시 물었다**는 뜻이다 -- 편 손을 얹어
+            # 두는 것은 괜찮다(사용자 결정).  다만 기하는 벽을 끼웠는지까지는 못 보므로, 바구니
+            # 옆에서 빈 집게를 닫아도 다시 문 것으로 읽힌다 (참가자 문서에 알린다).
             hands_off = bool(rel[w].all())
+
+            # **누르다가 바구니가 움직였나** (사용자 결정 2026-09-23: "누르다가 상자가 움직이면,
+            # 가점을 부여하지 않는 걸로 하자").
+            #
+            # 높이·기울기·**마지막 0.5 초 속도**만 보면 옆으로 5 cm 밀려도 끝에 멈춰 있으면
+            # 통과한다.  그래서 창 안에서 **처음 제대로 앉은 프레임**(`seated`: 높이 -3~+5 mm
+            # 그리고 속도 < 10 mm/s -- 둘 다 기존 기준)의 밑면 네 모서리를 기준으로, 창 끝까지
+            # **가장 많이 움직인 모서리**의 수평 거리를 잰다.  중심이 아니라 모서리인 이유:
+            # 제자리에서 돌려도 움직인 것이다 (중심만 보면 30 도를 돌려도 0 mm).
+            #
+            # 실측 (첫 안착 뒤 모서리 최대 이동):
+            #   GT 3 판                        0.002 mm
+            #   job122 ep2 (손 뗀 뒤 안 건드림)  0.011 mm   -- 실물리 잡음 바닥
+            #   job122 ep0 (얹고 누름 32~64 N)   1.95 mm
+            #   job122 ep1 (얹고 누름 1~78 N)   14.56 mm   (중심 5.90 mm, 1.4 도 돌음)
+            # 문턱은 채점표에서 `DESK_OK_MM` 을 그대로 쓴다 -- 평가표 책상 조항 「2 cm 이상
+            # 움직였을 시 가점을 부여하지 않는다」와 같은 형식이다.  15 mm 이상이면 어느 값이든
+            # 여섯 판 판정이 같다.  앉은 프레임이 없으면 None -- 높이 검사가 이미 걸러낸다.
+            _ws = np.flatnonzero(w & seated)
+            if _ws.size:
+                _c = corners[_ws[0]:int(np.flatnonzero(w)[-1]) + 1]
+                moved_mm = float(np.linalg.norm(_c - _c[0], axis=2).max() * 1000.0)
+            else:
+                moved_mm = None
             out["watch"] = {"opened": True, "t_release_s": float(a["t"][r]),
                             "hands_off": hands_off,
                             # 몇 번 놓았고 그중 몇 번째를 썼는가.  언제나 마지막이지만
@@ -779,6 +852,7 @@ def measure_one(head, a, scene, th):
                             "tilt_deg": float(tilt.max()),
                             "tail_speed_mm_s": float(c_speed[tail].max()
                                                      if tail.any() else c_speed[w][-1]),
+                            "moved_mm": moved_mm,
                             "window_s": float(t_end - a["t"][r]),
                             "window_frames": int(w.sum())}
             if t_end - a["t"][r] < th["WATCH_S"] - 1e-6:

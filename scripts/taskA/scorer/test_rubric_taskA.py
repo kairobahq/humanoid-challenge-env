@@ -354,6 +354,22 @@ check("다시 잡아도 분모는 21",
 check("hands_off 가 없으면 예전대로", got(R.score(m()), "stayed"), True)
 
 
+# ── 2026-09-23: 누르다가 바구니가 움직이면 6초 0점 ────────────────────────────────────
+# 손을 얹어 두는 것은 괜찮지만(「놓았다」는 집게로 본다) 그 손으로 바구니를 옮기면 안 된다.
+# 문턱은 책상 조항과 같은 `DESK_OK_MM`.  실측: job122 ep1 이 얹고 눌러 14.56 mm.
+check("모서리 14.56 mm (job122 ep1) -> 통과",
+      got(R.score(m(watch={"moved_mm": 14.56})), "stayed"), True)
+check("모서리 25 mm -> 0점", got(R.score(m(watch={"moved_mm": 25.0})), "stayed"), False)
+check("모서리 20.0 mm 는 문턱 안 -> 통과",
+      got(R.score(m(watch={"moved_mm": 20.0})), "stayed"), True)
+check("moved_mm 가 None 이면 예전대로",
+      got(R.score(m(watch={"moved_mm": None})), "stayed"), True)
+check("moved_mm 가 NaN 이면 유리하게 새지 않는다",
+      got(R.score(m(watch={"moved_mm": float("nan")})), "stayed"), False)
+check("밀려도 얹기(3점)는 그대로",
+      got(R.score(m(watch={"moved_mm": 25.0})), "placed"), True)
+
+
 # ── 2026-09-09: 도착 구역을 책상 둘레로, 멈춤 요구를 뺀다 ─────────────────────────────
 # 우리가 정한 목표점 반경 0.10 m 원이면 로봇 중심이 목표에서 0.325 m 안에 있어야 했는데,
 # 책상은 목표에서 0.900 m 떨어져 있고 팔은 0.79 m 를 뻗는다 -- 책상에 팔이 닿으면서 구역
