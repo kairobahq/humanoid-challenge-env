@@ -147,6 +147,12 @@ THRESHOLD = {
                              #     120~150° 72 · 150~180° 120 -- 이 선에서 293판이 방향 4점을 잃는다.
                              #     분포가 고르게 퍼져 있어 선 둘레에 골짜기가 없다. 사용자가 정한 값이다
     "still_mm_s": 10.0,      # B18
+    "still_window_s": 0.5,   # B18 의 속도는 둘로 잰다 -- 그 순간(한 프레임 이동)의 속도와, 판정 순간까지 이 시간 동안의 평균
+                             #     속도(순 이동 / 시간). 둘 중 하나라도 still_mm_s 보다 작으면 멈춘 것이다. 한 프레임만 보면 판
+                             #     위에서 제자리로 떠는 상품(컵 시리얼 등)이 프레임마다 1~62 mm/s 로 읽혀 점수가 운에 달리고,
+                             #     평균만 보면 판정 바로 앞까지 미끄러지다 막 멈춘 상품이 움직이는 것으로 읽힌다. 판정 순간 뒤의
+                             #     프레임은 쓰지 않는다. 실측: 판 위에 놓인 수집 기록 38,562판에서 한 프레임만 볼 때와 갈리는
+                             #     판은 42판(0 -> 1점)이고, 전부 판정 뒤 1초 동안 4.5 mm 이하로만 움직였다 (0.3 초 40판 · 1 초 37판)
     "watch_s": 3.0,          # 시트: 놓은 뒤 3초에 판정한다
     "crate_tilt_deg": 45.0,  # B19 ※ 실측: passed 3,133판 중 45° 안 3,127
     "crate_moved_mm": 20.0,  # B19 파란 상자가 첫 자리에서 xy 로 이만큼 넘게 밀렸으면 0점 (시트·발표 대본 "2 cm 이상 움직이지
@@ -318,6 +324,7 @@ class ProductScorer:
         self.moved_at_touch_mm = None
         self.contact_at_touch_N = None
         self.open_lift_frames = 0     # 손을 편 채 상품이 30 mm 넘게 올라가 있던 프레임 수
+        self.held_last = None         # 마지막으로 update 한 프레임에 쥐고 있었나 (None = 모름)
         self.n = 0
         self.last = None
         self.result = None
@@ -341,6 +348,7 @@ class ProductScorer:
         """
         if self.done:
             return
+        self.held_last = held
         p = np.asarray(product_pos, dtype=float)
         # 상품을 상자 좌표계로 -- 상자를 통째로 밀어도 이 값은 안 변하고, 상품을 건드리면 변한다 (B6)
         in_crate = np.asarray(qrot(qinv(crate_quat), p - np.asarray(crate_pos, dtype=float)), dtype=float)
@@ -443,7 +451,12 @@ class ProductScorer:
         # 것(시간 초과 · refused · 상자 속)이다. ~~테두리보다 낮으면 떨어진 것~~ 은 09-07 에 뺐다 -- 상자 위치가 이상한
         # 판 6개에서 손에 든 상품(z 0.87~0.92)이 떨어진 것으로 찍혔다.
         lay, m["under_mm"] = board_under(p, q, self.size)
-        placed = lay is not None
+        # **쥔 채로 판에 닿아 있는 것은 놓은 것이 아니다.** 손을 편 순간을 못 찾으면 마지막 프레임(또는 상자
+        # 낙하 순간)이 채점 시점인데, 그때 로봇이 상품을 쥔 채 판에 대고 있으면 밑면만 보고는 놓은 것과
+        # 구별되지 않는다. 쥠은 update 의 `held` (접촉이 있으면 그리퍼 마디 접촉, 없으면 그리퍼 각도)다.
+        # 모르면(None) 예전처럼 밑면만 본다.
+        m["held_at_end"] = self.held_last
+        placed = lay is not None and self.held_last is not True
         dropped = reason == "dropped"
         m["end_reason"] = "placed" if placed else ("dropped" if dropped else "in_hand")
         m["end_by"] = reason
@@ -506,7 +519,7 @@ class ProductScorer:
             # B17 -- 앞줄 칸 중심과 뒷줄 칸 중심의 딱 가운데보다 앞에
             pts["B17"] = POINTS["B17"] if float(p[0]) < FRONT_ROW_X else 0
 
-            # B18 -- 그 순간의 속도
+            # B18 -- 그 순간의 속도 (update 가 받은 값. score_npz 는 한 프레임 속도와 still_window_s 평균 중 작은 것을 준다)
             pts["B18"] = POINTS["B18"] if speed is not None and float(speed) < THRESHOLD["still_mm_s"] else 0
 
         # B19 -- 상자 중심이 탁자 윗면 위 ∧ 바닥면이 수직에서 45° 안 ∧ 첫 자리에서 crate_moved_mm 넘게 안 밀림.
@@ -644,15 +657,18 @@ def score_npz(path, products=None, end_frame=None):
         P = z[key]
         # ---- 채점 종료 ②: 놓은 뒤 3초. 놓은 순간은 **잡고 있던 손의 gripper 가 열리는 프레임**이다 --
         # 시작 값(열림)과 상자 밖으로 나온 프레임의 값(닫힘)의 가운데를 열림 쪽으로 넘는 첫 프레임. 어느 손인지는
-        # meta.pick_hand, 없으면 두 gripper 중 그 사이에 더 많이 움직인 쪽. 일곱 시연 실측: 잡음 0.68~0.92 rad,
-        # 놓음 0.00, 열림+3초는 기록 끝보다 23~80 프레임 앞(기록기가 팔을 빼는 시간).
+        # meta.pick_hand, 없으면 상자 밖으로 나온 순간에 쥔 각도(grip_closed_rad 이상)였던 손(하나일 때), 그것도 아니면
+        # 두 gripper 중 그 사이에 더 많이 움직인 쪽 -- 셋째 규칙만 쓰면 놓기만 있는 기록(나온 순간 = 첫 프레임)에서 두 손이
+        # 비겨 안 움직인 손을 고른다. 일곱 시연 실측: 잡음 0.68~0.92 rad, 놓음 0.00, 열림+3초는 기록 끝보다 23~80 프레임
+        # 앞(기록기가 팔을 빼는 시간).
         release = None
         b8 = int(np.argmax(P[:, 2] > float(C[0, 2]) + CRATE_H)) if (P[:, 2] > float(C[0, 2]) + CRATE_H).any() else None
         if end_frame is None and J is not None and b8 is not None:
             gi = {h: jnames.index(f"gripper_{h}_joint1") for h in "lr" if f"gripper_{h}_joint1" in jnames}
             hand = meta.get("pick_hand")
             if hand not in gi and gi:
-                hand = max(gi, key=lambda h: abs(float(J[b8, gi[h]] - J[0, gi[h]])))
+                shut = [h for h in gi if float(J[b8, gi[h]]) >= THRESHOLD["grip_closed_rad"]]
+                hand = shut[0] if len(shut) == 1 else max(gi, key=lambda h: abs(float(J[b8, gi[h]] - J[0, gi[h]])))
             if hand in gi:
                 g = J[:, gi[hand]]
                 # 열림 기준은 첫 프레임이 아니라 **잡은 뒤 가장 열린 값**이다. 놓기만 있는 기록(held_from)은 첫
@@ -674,6 +690,14 @@ def score_npz(path, products=None, end_frame=None):
                             release = last_closed + 1
                     elif opened.any():
                         release = int(after[int(np.argmax(opened))])
+                # 위 가운데 규칙이 놓은 순간을 못 찾았는데 그 손이 쥔 각도(grip_closed_rad 이상)에서 그 아래로 내려가 끝난
+                # 기록이면, 쥔 각도였던 마지막 프레임의 바로 다음을 놓은 순간으로 본다. 여는 도중 관절이 음수로 튀면(수집
+                # 기록 실측 -1.19 rad, 6 프레임) 그 값이 열림 기준이 되어 다 연 손(0.0 rad)이 닫힌 쪽으로 읽히고, 가운데
+                # 규칙은 끝까지 놓지 않은 것으로 본다. 가운데 규칙이 찾은 판은 건드리지 않는다.
+                if release is None:
+                    shut_after = np.flatnonzero(g[b8:] >= THRESHOLD["grip_closed_rad"])
+                    if len(shut_after) and b8 + int(shut_after[-1]) + 1 < n_all:
+                        release = b8 + int(shut_after[-1]) + 1
         if end_frame is not None:
             n, why = min(n_all, int(end_frame) + 1), "end_frame"
         elif release is not None and release + watch < n_all:
@@ -691,8 +715,15 @@ def score_npz(path, products=None, end_frame=None):
         back_key = f"obj/l{layer}_s{col + COLS:02d}"
         sc = ProductScorer(name, (layer, col), gaps, neighbours,
                            back_key if back_key in S else None, hz=hz)
+        k_still = max(1, int(round(THRESHOLD["still_window_s"] * hz)))
         for t in range(n):
-            speed = None if t == 0 else float(np.linalg.norm(P[t, :3] - P[t - 1, :3])) * 1000.0 * hz
+            # B18 의 속도 -- 그 순간(한 프레임)의 속도와 판정 순간까지 still_window_s 동안의 평균 속도 중 작은 것
+            # (THRESHOLD["still_window_s"] 주석). 앞의 프레임만 쓴다.
+            speed = None
+            if t > 0:
+                a = max(0, t - k_still)
+                speed = min(float(np.linalg.norm(P[t, :3] - P[t - 1, :3])) * 1000.0 * hz,
+                            float(np.linalg.norm(P[t, :3] - P[a, :3])) * 1000.0 * hz / (t - a))
             sc.update(t, P[t, :3], P[t, 3:7], C[t, :3], C[t, 3:7],
                       {k: (S[k][t, :3], tuple(float(v) for v in S[k][t, 3:7])) for k in S},
                       contact_N=(None if CT is None else float(CT[t])), speed_mm_s=speed,
