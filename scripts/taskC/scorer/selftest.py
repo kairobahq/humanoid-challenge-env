@@ -257,8 +257,51 @@ def test_rules():
     check("판 리셋 -> 점수 0", sc.total() == 0.0 and sc.stopped is None)
 
 
+def test_weak_grip_after_lift():
+    print("\n[4] 들기 통과 뒤 부하가 기준 밑으로 내려가도(닫힘 유지·떠 있음) 판독·놓기 인정 (2026-09-25)")
+    cfg = ScoreConfig()
+    p = FakeProduct("pringles_original_small", "8805219031423")
+    st = {"beam": np.array([5.0, 5.0, 5.0]), "load": {}, "vis": {}, "decode": {}, "closed": True, "grasp": True}
+    sc = TaskCScorer([p.spec()], cfg, table_z=0.96, band_rect=(0.11, 0.50, -0.01, 0.57),
+                     beam_origin_fn=lambda: st["beam"],
+                     grasp_fn=lambda s: st["grasp"], grip_closed_fn=lambda s: st["closed"],
+                     gripper_load_fn=lambda s: st["load"].get(s),
+                     coverage_fn=lambda s: st["vis"].get(s), decode_fn=lambda s: st["decode"].get(s))
+    s = sc.scores["pringles_original_small"]
+    dt, t = 1 / 120, 0.0
+    st["load"]["pringles_original_small"] = 30.0
+    p.pos = np.array([0.30, 0.10, 0.96 + 0.0615 + 0.03])        # 쥐고 3 cm 들기
+    for _ in range(12):
+        t += dt; sc.tick(t)
+    check("들기 통과", s.lift.passed)
+    st["grasp"] = False; st["load"]["pringles_original_small"] = 0.5   # 이송 중 부하 0.5 N·m (기준 1 N·m 밑), 닫힘은 유지
+    st["beam"] = p.pos + np.array([0.033 + 0.10, 0.0, 0.0]); st["vis"]["pringles_original_small"] = 0.35
+    st["decode"]["pringles_original_small"] = "8805219031423"
+    for _ in range(int(0.7 / dt)):
+        t += dt; sc.tick(t)
+    check("부하가 약해도 떠 있고 닫혀 있으면 판독 통과", s.decode.passed)
+    check("조준도 통과", s.aim.passed)
+    st["closed"] = False                                           # 띠 안에 내려놓고 집게 엶
+    p.pos = np.array([0.30, 0.10, 0.96 + 0.0615]); p.vel = np.zeros(3)
+    for _ in range(3):
+        t += dt; sc.tick(t)
+    check("놓기 통과", s.place.passed)
+
+    # 떨어뜨린 경우는 여전히 안 된다: 닫힘 유지라도 상판 위로 내려앉으면 held 아님
+    p2 = FakeProduct("q", "1")
+    st2 = {"closed": True, "decode": {"q": "1"}}
+    sc2 = TaskCScorer([p2.spec()], cfg, table_z=0.96, band_rect=(0.11, 0.50, -0.01, 0.57),
+                      beam_origin_fn=lambda: p2.pos + np.array([0.1, 0, 0]),
+                      grasp_fn=lambda s: False, grip_closed_fn=lambda s: st2["closed"],
+                      gripper_load_fn=lambda s: 0.0, coverage_fn=lambda s: 0.35, decode_fn=lambda s: st2["decode"].get(s))
+    for i in range(100):
+        sc2.tick(i / 120)
+    check("들기 통과 없이 닫힘만으로는 판독 안 됨", not sc2.scores["q"].decode.passed)
+
+
 if __name__ == "__main__":
     test_geometry()
     test_full_run()
     test_rules()
+    test_weak_grip_after_lift()
     print(f"\n전부 통과 — {_n[0]}개 검사")
