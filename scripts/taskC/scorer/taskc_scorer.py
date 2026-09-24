@@ -432,6 +432,13 @@ class TaskCScorer:
             # 이송 중 떨어뜨리면 이 값이 즉시 False 가 되어 지향·판독이 성립하지 않는다.
             held = None if grasped is None else (
                 bool(grasped) and (self._low_z(prod) - self.table_z) > self.cfg.held_clear_m)
+            # 2026-09-25: 들기(Sub 1-2)를 한 번 통과한 뒤에는 「집게 닫힘 + 상판에서 떠 있음」이면 들고 있는 것으로 본다.
+            # 들기 통과로 파지는 인정했는데(09-24), 이송 중 모터 부하가 기준 밑으로 잠깐 내려간 프레임은 held 가
+            # 꺼져 지향·판독이 막히고, 판독이 없으니 놓기도 막혔다. 떨어뜨리면 상판으로 내려가 held 는 그대로 꺼진다.
+            if held is False and sc.lift.passed and self.grip_closed_fn(slug) \
+                    and (self._low_z(prod) - self.table_z) > self.cfg.held_clear_m:
+                held = True
+                sc.ev["held_by_lift"] = sc.ev.get("held_by_lift", 0) + 1
             if held:
                 sc.ev["frames_held"] = sc.ev.get("frames_held", 0) + 1
                 sc.ev["held_run_s"] = sc.ev.get("held_run_s", 0.0) + dt
