@@ -35,9 +35,9 @@ class ScoreConfig:
     # V홈에 물리든 팁에 물리든 그 모터의 부하 하나로 드러난다.
     #   부하 = clip(stiffness x (명령 - 실측), ±effort_limit)   [N·m]
     #   FFW_SG2 좌측: stiffness 300.0, effort_limit 30.0
-    grip_load_min_nm: float = 5.0        # 이 이상이면 모터가 실제로 밀고 있다
+    grip_load_min_nm: float = 1.0        # 이 이상이면 모터가 실제로 밀고 있다 (2026-09-24: 5.0 -> 1.0, 약하게 쥔 컵이 들렸는데도 「안 쥠」이 되던 것을 고친다)
     grip_stall_margin_rad: float = 0.02  # 자유 닫힘 위치보다 이만큼 못 닫혔으면 물린 것
-    grip_hold_s: float = 0.3             # 0.3초 연속
+    grip_hold_s: float = 0.1             # 0.1초 연속 (2026-09-24: 0.3 -> 0.1)
     pts_grip: float = 2.0
     # 「들려 있다」의 정의 -- 상판에서 이만큼 떠 있어야 손에 들린 것으로 본다.
     # 그리퍼가 닫혀 있어도 물건이 상판에 얹혀 있으면 든 것이 아니다.
@@ -161,6 +161,8 @@ class ProductScore:
         않는다. 판이 끝난 뒤 점수를 셈할 때 적용하며, 그 뒤 실제로 들리면 래치가 다시
         선다(update 가 다시 passed 를 세운다). 틱 중(all_five·points)에는 적용하지 않는다 -- 들기 전에 잰 파지가
         도중에 꺼지면 안 되기 때문이다(selftest 의 (a) 단계)."""
+        if self.lift.passed:   # 2026-09-24: 들기(Sub 1-2)가 통과했으면 파지도 통과 -- 헛집기 취소를 적용하지 않는다
+            return
         if self.grip.passed and self.ev.get("max_held_run_s", 0.0) < self.cfg.grip_held_min_s:
             self.grip.passed = False
             self.grip.first_t = None
@@ -186,8 +188,10 @@ class ProductScore:
             out[key] = ok_msg if st is True else (na_msg if st == UNAVAILABLE else fail_msg)
 
         say("sub1_1_grip", self.grip,
-            f"모터 부하가 {cfg.grip_load_min_nm:.1f}N·m 이상으로 "
-            f"{cfg.grip_hold_s:.1f}초 연속 유지됐다 (최대 {e['max_load_nm']:.1f}N·m)",
+            (f"들기(Sub 1-2)가 통과해 파지도 인정했다 (부하 최대 {e['max_load_nm']:.1f}N·m)"
+             if e.get("grip_by_lift") else
+             f"모터 부하가 {cfg.grip_load_min_nm:.1f}N·m 이상으로 "
+             f"{cfg.grip_hold_s:.1f}초 연속 유지됐다 (최대 {e['max_load_nm']:.1f}N·m)"),
             ((f"모터 부하는 걸렸으나(최대 {e['max_load_nm']:.1f}N·m) 쥔 채로 상품이 상판에서 "
               f"{cfg.held_clear_m*1000:.0f}mm 이상 떠 있던 시간이 최대 {e.get('max_held_run_s', 0.0):.2f}초로 "
               f"기준 {cfg.grip_held_min_s:.1f}초에 못 미쳤다 — 옆면을 누르거나 쳐서 잠깐 들린 헛집기로 본다")
@@ -418,6 +422,11 @@ class TaskCScorer:
                     sc.ev["max_lift_m"] = h if sc.ev["max_lift_m"] is None else max(sc.ev["max_lift_m"], h)
                 sc.lift.update(bool(grasped)
                                and (amin[2] - self.table_z) > self.cfg.lift_clear_m, dt, t)
+            # 2026-09-24: 들기 조건을 만족하면 파지도 성공으로 본다 (들렸으면 쥔 것이다).
+            if sc.lift.passed and not sc.grip.passed:
+                sc.grip.passed, sc.grip.available = True, True
+                sc.grip.first_t = sc.lift.first_t if sc.grip.first_t is None else sc.grip.first_t
+                sc.ev["grip_by_lift"] = True
 
             # --- 「들려 있는가」 = 쥔 상태 + 상판에서 떠 있음.
             # 이송 중 떨어뜨리면 이 값이 즉시 False 가 되어 지향·판독이 성립하지 않는다.
