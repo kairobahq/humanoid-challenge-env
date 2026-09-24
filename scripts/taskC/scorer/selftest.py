@@ -148,18 +148,18 @@ def test_rules():
           "load": {"a": 30.0}, "qgrip": {"a": 0.90}, "qfree": 1.10, "vis": {}, "decode": {}}
     sc = build(cfg, [p], st)
     dt, t = 1 / 120, 0.0
-    for _ in range(int(0.25 / dt)):
+    for _ in range(int(0.08 / dt)):
         t += dt; sc.tick(t)
-    st["load"]["a"] = 1.0                  # 부하가 떨어짐 (놓침)
+    st["load"]["a"] = 0.5                  # 부하가 떨어짐 (놓침) -- 기준 1 N·m 아래
     t += dt; sc.tick(t)
     st["load"]["a"] = 30.0
-    for _ in range(int(0.25 / dt)):
+    for _ in range(int(0.08 / dt)):
         t += dt; sc.tick(t)
-    check("부하가 끊기면 타이머 초기화 (0.25+0.25 로는 통과 못 함)",
+    check("부하가 끊기면 타이머 초기화 (0.08+0.08 로는 통과 못 함)",
           not sc.scores["a"].grip.passed)
-    for _ in range(int(0.1 / dt) + 2):
+    for _ in range(int(0.03 / dt) + 2):
         t += dt; sc.tick(t)
-    check("이어서 0.3초를 채우면 통과", sc.scores["a"].grip.passed)
+    check("이어서 0.1초를 채우면 통과", sc.scores["a"].grip.passed)
 
     # 인식 전 배치는 미인정
     p2 = FakeProduct("b", "Y")
