@@ -23,8 +23,16 @@
 
 상품은 시드가 정한다. 빨간 띠 안에 3 개를 놓고, QR 면이 정 오른쪽(월드 -Y)을 보도록
 돌려 세운다. 규칙(띠 안 · 최소 간격 · 원통 직립 · QR 방향)을 지킬 때까지 다시 깐다.
+2026-09-26 부터 생성기가 두 벌이다: 위가 qr_right, QR 방위만 무작위(360 도)인 것이 rand.
+기본(auto)은 평가 3 회차 중 마지막 회차(시드 % 3 == 2)만 rand 다 -- `--scene-gen` 참조.
 
     --seed N              상품 3 종과 배치를 정하는 수 (0·1·2 는 평가 표본)
+    --scene-gen MODE      씬 생성기 (2026-09-26): auto(기본) | qr_right | rand
+                            qr_right  QR 면이 정 오른쪽 (종전 생성기, taskC_deal)
+                            rand      QR 면이 무작위 방위 360 도 (taskC_deal_rand). 바닥 닿는 면·
+                                      띠·간격 8 cm·그리퍼 비움은 qr_right 와 같다
+                            auto      평가 3 회차 중 마지막만 rand: 시드 % 3 == 2 -> rand, 아니면 qr_right
+                          플래그가 없으면 환경변수 TASKC_SCENE_GEN, 그것도 없으면 auto
     --products a,b,c      상품을 직접 고른다. 첫 번째가 로봇이 다룰 대상이다
     --scene-file FILE     이미 만든 장면 JSON 을 그대로 쓴다 (재생기 기록의 장면도 된다)
     --scene-json FILE     세운 장면을 JSON 으로 적는다
@@ -44,6 +52,10 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="과제 C 의 시작 장면을 세우고 멈춘다.")
 parser.add_argument("--seed", type=int, default=1000,
                     help="상품 3 종과 배치를 정하는 수 (0·1·2 는 평가 표본)")
+# 2026-09-26: 씬 생성기 두 벌 중 고르기. 고르는 규칙은 `taskC/taskC_scene_gen.py` 한 곳에 있다.
+parser.add_argument("--scene-gen", default=None, choices=("auto", "qr_right", "rand"),
+                    help="씬 생성기: auto(기본, 시드 %% 3 == 2 만 rand) | qr_right(QR 정 오른쪽) | "
+                         "rand(QR 무작위 방위). 없으면 환경변수 TASKC_SCENE_GEN, 그것도 없으면 auto.")
 parser.add_argument("--products", default=None, metavar="a,b,c",
                     help="상품을 직접 고른다. 첫 번째가 로봇이 다룰 대상이다.")
 parser.add_argument("--scene-file", default=None, metavar="FILE.json",
@@ -107,7 +119,13 @@ if args_cli.scene_file:
     SCENE = json.load(open(args_cli.scene_file, encoding="utf-8"))
     print(f"[장면] {args_cli.scene_file} 을 그대로 쓴다", flush=True)
 else:
-    from taskC import taskC_deal as D          # noqa: E402
+    # 2026-09-26: 생성기는 `taskC_scene_gen` 이 고른다 -- qr_right 면 종전 `taskC_deal` 그대로,
+    # rand 면 `taskC_deal_rand`(같은 API). 아래 딜 고리는 어느 쪽이든 한 글자도 다르지 않다.
+    from taskC import taskC_scene_gen as SG   # noqa: E402
+    SCENE_GEN = SG.resolve(args_cli.scene_gen, args_cli.seed)
+    D = SG.modules(SCENE_GEN)[0]              # 짝 검사 모듈은 정착 고리(main)에서 꺼낸다
+    print(f"[장면] 씬 생성기 {SCENE_GEN} (모드 {args_cli.scene_gen or SG.default_mode()}, "
+          f"회차 {SG.episode_of(args_cli.seed) + 1}/{SG.EPISODES})", flush=True)
     _slugs = D.pick_products(args_cli.seed, args_cli.products)
     # 2026-09-12: 간격 10 cm 를 지킬 자리가 없으면 딜이 `Infeasible` 을 낸다. 규칙을
     # 어긴 장면을 만들지 않으려고, 다음 딜로 넘어가며 한도까지 찾는다.
@@ -122,6 +140,7 @@ else:
         raise SystemExit(f"! 시드 {args_cli.seed}: 상품 3 개를 간격 10 cm 로 놓을 자리가 "
                          f"없다 (딜 {L.MAX_REDEAL} 회). 다른 시드를 쓴다.")
     SCENE = {"seed": args_cli.seed,
+             "scene_gen": SCENE_GEN,        # 2026-09-26: 어느 생성기로 깐 장면인지 (qr_right | rand)
              "products": [{"slug": d["slug"], "pos": list(d["pos"]), "quat": list(d["quat"])}
                           for d in _d0]}
     # 2026-09-12: 기타 진열대(곤돌라)의 진열도 씨앗이 정한다. 구워 둔 12 벌 중 하나를 골라
@@ -729,8 +748,10 @@ def main():
     # 배치가 규칙을 지킬 때까지 가라앉히고 다시 깐다. 재생기는 이미 정착된 장면을 받으므로
     # 이 고리가 없다. 데모는 장면을 여기서 만드니 여기서 확정한다.
     if not args_cli.scene_file:
-        from taskC import taskC_check as K     # noqa: E402
-        from taskC import taskC_deal as D      # noqa: E402
+        # 2026-09-26: 딜을 깐 생성기의 짝 검사를 쓴다. rand 장면을 원본 검사(QR 방위 -90 +-3 도)로
+        # 보면 끝없이 재딜되므로 `taskC_check_rand`(방위 검사만 뺀 판)가 짝이다.
+        from taskC import taskC_scene_gen as SG  # noqa: E402
+        D, K = SG.modules(SCENE_GEN)
         _slugs_d = [d["slug"] for d in PRODUCTS]
         _try, _ok, _res = 0, False, []
         while not _ok and _try < L.MAX_REDEAL:
