@@ -174,7 +174,8 @@ def main(trace_path, scene_path, decode_path, out_path=None):
 
         재생기와 **같은 카메라**를 해석적으로 재현한다:
           자세   eye = b0 + bd*0.03,  target = b0 + bd*0.30   (V4-250 과 동일)
-          스펙   1600x1000, focal 31.43mm, horizontal_aperture 20.955mm  (CameraCfg 그대로)
+          스펙   trace 의 cam 값 = trace_write.SCANNER_CAM: 1600x1000, focal 31.43mm,
+                 horizontal_aperture 24.09825mm (2026-09-26 원본 20.955mm 대비 화각 15% 확대)
         픽셀 세기가 아니라 **경계상자 투영 넓이**라 실제 점유율의 상한이다.
         가려짐·곡면은 반영하지 않는다 -- 리포트에 그대로 적는다.
         """
@@ -251,7 +252,7 @@ def main(trace_path, scene_path, decode_path, out_path=None):
                      "replay_decode_ok": decoded_ok}
     rep["warnings"].append(
         "화면 점유율은 OBB 투영 넓이 비율이다 -- 가려짐·곡면을 반영하지 않는 **상한**이고, "
-        "이 스캐너캠(화각 약 37도)에서는 제시 거리에서 100% 로 포화해 사실상 변별하지 않는다.")
+        "이 스캐너캠(화각 약 42도)에서는 제시 거리에서 100% 로 포화해 사실상 변별하지 않는다.")
     if out_path:
         json.dump(rep, open(out_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     return rep
