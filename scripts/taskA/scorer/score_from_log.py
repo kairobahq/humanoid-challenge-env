@@ -277,16 +277,67 @@ def measure_one(head, a, scene, th):
     #
     # **한 번 물었던 뒤로만** 놓은 것으로 센다 -- 실시간 판정기의 `rel and was_gripped` 와
     # 같은 뜻이다.  안 그러면 한 번도 안 잡은 판이 첫 프레임에 「놓았다」가 된다.
+    # **기하만으로는 모자란다 -- 손가락 접촉힘을 함께 요구한다** (2026-09-23 저녁, job246).
+    #
+    # 기하 문턱(벌림 60 mm)은 우리 궤적으로만 검증돼 있었다.  우리 로봇과 job122 는 27~34 mm
+    # 에서 114 mm 로 **한 번에** 열어서 51~60 구간에 머무는 프레임이 하나도 없었고, 그래서 그
+    # 구간이 틀리는지 볼 방법이 없었다.  job246 팀 정책은 **52.2 mm 에서 2 초를 쉬고** 나머지를
+    # 연다 (두 판 모두 소수점 한 자리까지 같은 값 -- 잡음이 아니라 그 정책의 중간 자세다).
+    #
+    #   job246 ep0   t=172.30  벌림 50.3 mm  손가락힘 49.8 N   물고 있다
+    #                t=172.40  벌림 52.2 mm  손가락힘  0.00 N  **여기서 놓았다** (물리)
+    #                t~174.4   벌림 52.2 mm  손가락힘  0.00 N  기하만 보면 아직 물고 있다
+    #                t=174.50  벌림 62.3 mm                    기하가 뒤늦게 알아챈다
+    #
+    # 기하가 2.1 초 늦으면 그만큼 감시창이 늦게 열리고, 라이브 판정기가 **자기 창 6 초에서 판을
+    # 끝내므로** 기록이 4.0 초밖에 안 남아 6 초 항목이 0 점이 됐다 (ep1 은 3.75 초).
+    #
+    # 그래서 「물고 있다」 = **기하로 물린 자리 ∧ 손가락에 접촉힘**.  두 기준이 서로의 구멍을
+    # 막는다:
+    #
+    #   job246 (반쯤 열고 멈춤)   기하 틀림 / 힘 맞음   -> 힘이 막는다
+    #   job122 (편 손을 얹음)     기하 맞음 / 힘 맞음   -> 벌림 114 mm 라 둘 다 놓았다고 본다
+    #   쥔 채 상판에 대고만 있기   기하 맞음 / 힘 맞음
+    #
+    # **로봇 전체 접촉(`crate_robot_force`)이 아니라 손가락 8 마디(`grip_force`)를 본다.**
+    # 전체를 보면 팔이나 손등을 얹어 둔 것이 「아직 쥐고 있다」가 된다 -- 그것이 라이브 판정기가
+    # 틀리는 자리이고 이 수정으로 되살릴 구멍이 아니다.
+    #
+    # 보너스: 손가락은 로봇의 일부다.  로봇 전체에 힘이 없으면 손가락에도 없다.  그래서 이
+    # 규칙의 놓은 시각은 **라이브보다 항상 같거나 이르다** -- 라이브가 자기 시각부터 6 초를
+    # 남겨 주므로 「우리 창이 늦게 열려 기록이 모자란다」가 구조적으로 불가능해진다.
+    #
+    # **「힘이 0 이다」와 「힘을 안 쟀다」를 가른다.**  물리를 안 돌린 정답 주행 기록과, 손가락
+    # 힘 열이 없어 0 으로 채워 들어오는 옛 기록(job122)은 판 내내 0 이다.  그대로 힘을 요구하면
+    # 그 판들이 「한 번도 안 물었다」가 되어 얹기 3 점이 사라진다.  가르는 근거는 물리다 --
+    # **집었다면 손가락에 힘이 있어야 한다.**  실측이 애매하지 않다: job246 은 물고 있던 동안
+    # 최대 162.6 N / 143.7 N, 힘을 안 잰 기록은 0.00 N 이다.  힘이 판 내내 문턱 아래인 기록은
+    # 손가락 센서가 없는 것으로 보고 기하만 쓰고, 그 사실을 메모에 남긴다.
     _gp = np.asarray(a["grip_pos"], dtype=np.float64)
     _nan = (~np.isfinite(_gp).reshape(len(_gp), -1).all(axis=1)
             | ~np.isfinite(np.asarray(a["crate_pos"], np.float64)).all(axis=1)
             | ~np.isfinite(np.asarray(a["crate_quat"], np.float64)).all(axis=1))
-    _clamp = GRIP.held(_gp, a["crate_pos"], a["crate_quat"], TL_BASKET_SIZE)[0] & ~_nan
+    _geom = GRIP.held(_gp, a["crate_pos"], a["crate_quat"], TL_BASKET_SIZE)[0] & ~_nan
+    _fingers = grip_max > th["CONTACT_N"]
+    _measured = bool(_fingers.any())
+    _clamp = _geom & _fingers if _measured else _geom
     grip_held = _clamp | _nan
     released = (~grip_held) & (np.maximum.accumulate(_clamp) if len(_clamp) else _clamp)
-    out["release_rule"] = {"by": "grip_geom", "near_mm": float(GRIP.NEAR_MM),
-                           "gap_mm": float(GRIP.GAP_MM), "ever_clamped": bool(_clamp.any()),
-                           "nan_frames": int(_nan.sum())}
+    out["release_rule"] = {"by": "grip_geom + grip_force" if _measured else "grip_geom",
+                           "near_mm": float(GRIP.NEAR_MM), "gap_mm": float(GRIP.GAP_MM),
+                           "contact_N": float(th["CONTACT_N"]),
+                           "finger_force_measured": _measured,
+                           "grip_force_max_N": float(grip_max.max()) if len(grip_max) else 0.0,
+                           "geom_only_frames": int((_geom & ~_clamp).sum()),
+                           "ever_clamped": bool(_clamp.any()), "nan_frames": int(_nan.sum())}
+    if not _measured:
+        out["notes"].append(
+            "손가락 접촉힘이 판 내내 문턱 아래다 — 손가락 센서가 없는 기록으로 보고 "
+            "「물고 있다」를 **기하로만** 판정했다 (집었다면 힘이 있어야 한다)")
+    elif (_geom & ~_clamp).any():
+        out["notes"].append(
+            f"집게가 기하로는 물린 자리인데 손가락 접촉힘이 없는 프레임 "
+            f"{int((_geom & ~_clamp).sum())}개는 「놓았다」로 보았다 — 반쯤 열고 멈춘 자세다")
     if _nan.any():
         out["notes"].append(
             f"손가락·바구니 좌표가 빈 프레임 {int(_nan.sum())}개는 「놓았다고 확인 못 함」"
@@ -787,11 +838,32 @@ def measure_one(head, a, scene, th):
         if r is None:
             out["watch"] = {"opened": False}
         else:
-            w = (a["t"] >= a["t"][r]) & (a["t"] <= a["t"][r] + th["WATCH_S"])
+            # **창의 경계에 반 틱의 여유를 둔다** (2026-09-23 저녁, job246 ep1).
+            #
+            # 시뮬레이션 시각은 틱 간격을 계속 더해 만들기 때문에 끝자리가 흐트러진다.  여유가
+            # 없으면 창의 **마지막 틱이 표현 오차로 빠진다**:
+            #
+            #   job246 ep1  창의 끝 152.85 + 6.0 = 158.85
+            #               121 번째 틱에 적힌 시각 158.85000000000002   (28 펨토초 초과)
+            #               -> 그 틱이 빠져 창이 5.95 초가 되고 「6 초를 못 채웠다」로 0 점
+            #
+            # 실측: 기록의 모든 틱을 놓은 시각으로 놓고 세어 보면 마지막 틱이 빠지는 비율이
+            # 실제 평가 기록 5~9 %, 정답 주행 기록(시각을 float32 로 저장) 15~25 % 다.  정답지가
+            # 21 점인 것은 **운이 좋아서**였다.
+            #
+            # 라이브 판정기는 같은 자리에 `+1e-9` 를 둔다 (`taska_judge.py:618`).  여기서는 틱의
+            # **절반**을 쓴다 -- 뜻은 「6 초에 해당하는 틱까지 담는다」이고, 틱 개수로 자르는 것과
+            # 같으면서 틱이 빠진 기록에서도 안전하다 (개수로 세면 빠진 만큼 창이 길어진다).
+            # 반 틱은 표현 오차(최대 1e-6 초)보다 4 만 배 크고 한 틱보다 작아서, 이 여유로 들어오는
+            # 틱은 **6 초 경계의 그 틱 하나뿐**이다.
+            _dt = float(np.median(np.diff(a["t"]))) if len(a["t"]) > 1 else 0.0
+            _eps = _dt * 0.5
+            w = (a["t"] >= a["t"][r]) & (a["t"] <= a["t"][r] + th["WATCH_S"] + _eps)
             # **창의 마지막 WATCH_TAIL_S 초** (시트 Sub 3# ④: "창 마지막 0.5초 동안").
             # 창이 6초를 다 못 채우고 로그가 끝났으면 있는 것의 꼬리를 본다.
+            # 꼬리의 경계에도 같은 여유를 준다 -- 같은 오차가 꼬리의 첫 틱을 떨어뜨린다.
             t_end = float(a["t"][w].max())
-            tail = w & (a["t"] >= t_end - th["WATCH_TAIL_S"])
+            tail = w & (a["t"] >= t_end - th["WATCH_TAIL_S"] - _eps)
             s = seat_mm[w]
             # **위아래를 둘 다 보고, 한계를 더 많이 넘은 쪽**을 최악으로 고른다.
             #

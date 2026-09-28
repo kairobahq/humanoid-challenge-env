@@ -734,6 +734,71 @@ if SFL.merge([_pv])["ended"] != "time_limit":
     FAIL.append("한 번도 안 잡은 판이 %r 로 끝났다 -- time_limit 이어야 한다"
                 % SFL.merge([_pv])["ended"])
 
+# ── 2026-09-23 저녁: job246 -- 반쯤 열고 멈춘 집게, 그리고 창 경계의 표현 오차 ───────────
+#
+# ⑨ **반쯤 열고 2 초 멈춘다** (job246 팀 정책의 중간 자세, 벌림 52.2 mm).
+#    기하만 보면 그 2 초가 「아직 물고 있다」라서 창이 2.1 초 늦게 열리고, 라이브가 자기 창
+#    6 초에서 판을 끝내므로 기록이 4.0 초밖에 안 남아 0 점이 됐다.  손가락 접촉힘을 함께 보면
+#    힘이 0 이 되는 프레임에서 놓은 것이 되어 창이 제때 열린다.
+_half = _rest(0.0)
+_half["grip_force"] = np.zeros_like(A["grip_force"])
+_half["grip_force"][:_r] = 5.0                       # 놓기 전에는 손가락에 힘이 있다
+_hoff = np.zeros((A["grip_pos"].shape[1], 3), np.float32)
+_hoff[:, 1] = ((np.arange(A["grip_pos"].shape[1]) % 4) // 2) * 0.052 - 0.026   # 벌림 52 mm
+_half["grip_pos"][_r:] = (_half["crate_pos"][_r:, None, :]
+                          + _hoff[None, :, :]).astype(A["grip_pos"].dtype)
+# 라이브와 같은 자리에서 판을 끝낸다 -- 놓은 프레임 + 6 초 + 한 틱 (실제 평가 기록의 모양)
+_n6 = int(round(6.0 / _dt))
+_cut = {k: (v[:_r + _n6 + 2] if getattr(v, "shape", None) and v.shape[0] == len(A["t"]) else v)
+        for k, v in _half.items()}
+_ph = SFL.measure_one(copy.deepcopy(_HD), _cut, SCENE, TH)
+_rh = R.score(SFL.merge([_ph]))
+if (_ph.get("watch") or {}).get("t_release_s") != float(_cut["t"][_r]):
+    FAIL.append("반쯤 열고 멈춘 판의 창이 손가락 힘이 0 이 된 프레임에 안 열렸다 -- %r"
+                % (_ph.get("watch") or {}).get("t_release_s"))
+if not _rh["items"]["stayed"]["got"]:
+    FAIL.append("반쯤 열고 멈췄다가 끝까지 연 판이 6 초를 못 받았다 -- %s"
+                % _rh["items"]["stayed"]["why"][:80])
+if (_ph.get("release_rule") or {}).get("by") != "grip_geom + grip_force":
+    FAIL.append("손가락 힘이 있는 기록인데 판정 근거가 %r 다"
+                % (_ph.get("release_rule") or {}).get("by"))
+
+# ⑩ **손가락 힘이 판 내내 0 인 기록은 기하만 쓴다** -- 「힘이 0」과 「힘을 안 쟀다」는 다르다.
+#    정답 주행과 옛 기록(job122)이 여기 해당한다.  힘을 그대로 요구하면 그 판들이 「한 번도
+#    안 물었다」가 되어 얹기 3 점이 사라진다.
+_p0 = SFL.measure_one(copy.deepcopy(_HD), _rest(30.0), SCENE, TH)
+_rr0 = (_p0.get("release_rule") or {})
+if _rr0.get("by") != "grip_geom" or _rr0.get("finger_force_measured") is not False:
+    FAIL.append("손가락 힘이 없는 기록인데 힘을 요구했다 -- %r" % _rr0)
+if not (_p0.get("place") or {}).get("released_any"):
+    FAIL.append("손가락 힘이 없는 기록에서 「놓았다」가 사라졌다 -- 기하 대체가 안 걸렸다")
+
+# ⑪ **창의 마지막 틱이 표현 오차로 빠지지 않는다** (job246 ep1: 28 펨토초 초과로 0 점).
+#    경계 틱의 시각을 6 초보다 아주 조금 뒤로 밀어 둔다.  여유가 없으면 그 틱이 빠져 창이
+#    5.9 초가 되고 「6 초를 못 채웠다」로 0 점이 된다.
+_drift = _rest(0.0)
+_drift["t"] = _drift["t"].astype(np.float64)
+_drift["t"][_r + _n6] = _drift["t"][_r] + 6.0 + 1e-13
+_pd = SFL.measure_one(copy.deepcopy(_HD), _drift, SCENE, TH)
+_wd = _pd.get("watch") or {}
+if _wd.get("window_frames") != _n6 + 1:
+    FAIL.append("창이 %r 틱이다 -- %d 틱이어야 한다 (경계 틱이 표현 오차로 빠졌다)"
+                % (_wd.get("window_frames"), _n6 + 1))
+if not R.score(SFL.merge([_pd]))["items"]["stayed"]["got"]:
+    FAIL.append("28 펨토초 오차로 6 초 항목이 0 점이 됐다")
+
+# ⑫ **여유가 한 틱을 더 삼키지도 않는다** -- 6 초를 넘긴 틱은 창 밖이다
+_pe = SFL.measure_one(copy.deepcopy(_HD), _rest(0.0), SCENE, TH)
+if (_pe.get("watch") or {}).get("window_frames") != _n6 + 1:
+    FAIL.append("정상 기록의 창이 %r 틱이다 -- %d 틱이어야 한다 (여유가 한 틱을 더 먹었다)"
+                % ((_pe.get("watch") or {}).get("window_frames"), _n6 + 1))
+
+# ⑬ **진짜로 짧은 기록은 그대로 0 점이다** -- 여유가 모자란 기록을 통과시키지 않는다
+_short = {k: (v[:_r + _n6 - 5] if getattr(v, "shape", None) and v.shape[0] == len(A["t"]) else v)
+          for k, v in _rest(0.0).items()}
+if R.score(SFL.merge([SFL.measure_one(copy.deepcopy(_HD), _short, SCENE, TH)]))["items"]["stayed"]["got"]:
+    FAIL.append("기록이 5.5 초뿐인데 6 초 항목을 받았다")
+
 
 if FAIL:
     print("실패 %d건" % len(FAIL))
