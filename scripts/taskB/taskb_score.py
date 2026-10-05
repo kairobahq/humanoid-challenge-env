@@ -25,7 +25,7 @@
 #                        접촉 센서 값(contact_N)을 주면 B6 는 그것으로도 참이 된다.
 #
 # 채점 종료는 시트대로 둘뿐이다. 둘 다 채점기가 스스로 찾는다:
-#   놓은 뒤 3초   상품이 양손 그리퍼 어느 마디에도 쥐여 있지 않게 된 프레임 + 3초. 그 3초 안에 다시 쥐면 그 놓음은
+#   놓은 뒤 3초   상품이 양손 그리퍼 어느 마디에도 쥐여 있지 않게 된 프레임 + 3초. 놓은 뒤 10초 안에 다시 쥐면 그 놓음은
 #                 없던 것이고, 3초 뒤 상품이 선반 판 위가 아니면(탁자 위 · 상자 속) 진열이 안 끝난 것이라 계속 본다
 #                 (score_npz 가 접촉 기록 `contact/grip{N}` 에서 찾는다, release_by_contact). 그 칸이 없는 옛 기록은
 #                 잡고 있던 손의 gripper 가 열리는 프레임 + 3초 (관절 기록)
@@ -157,6 +157,9 @@ THRESHOLD = {
                              #     프레임은 쓰지 않는다. 실측: 판 위에 놓인 수집 기록 38,562판에서 한 프레임만 볼 때와 갈리는
                              #     판은 42판(0 -> 1점)이고, 전부 판정 뒤 1초 동안 4.5 mm 이하로만 움직였다 (0.3 초 40판 · 1 초 37판)
     "watch_s": 3.0,          # 시트: 놓은 뒤 3초에 판정한다
+    "regrasp_s": 10.0,       # 놓은 뒤 이 시간 안에 다시 쥐면 그 놓음은 없던 것이다 (사용자 2026-10-05: 선반 판에 잠시
+                             #     내려놓았다가 다시 쥘 수 있게 3초를 10초로). 판정은 그대로 놓은 뒤 watch_s 때의 모습으로 한다 --
+                             #     10초를 보는 것은 다시 쥐는지를 알려는 것뿐이다. 접촉 칸이 있는 기록(release_by_contact)에만 쓴다
     "crate_tilt_deg": 45.0,  # B19 ※ 실측: passed 3,133판 중 45° 안 3,127
     "crate_moved_mm": 20.0,  # B19 파란 상자가 첫 자리에서 xy 로 이만큼 넘게 밀렸으면 0점 (시트·발표 대본 "2 cm 이상 움직이지
                              #     않았다면", 사용자 2026-09-07). 실측: passed 3,133판 최대 4.9 mm, pick 2,284판 중 넘는 판 9
@@ -598,7 +601,7 @@ def held_by_contact(CT, hz: float):
     return out
 
 
-def release_by_contact(held, P, b8, watch, size):
+def release_by_contact(held, P, b8, watch, size, regrasp=None):
     """놓은 순간과 채점 시점 -- 접촉 기록이 있는 판 (2026-10-05). (놓은 프레임, (n, 까닭)) 을 돌려준다.
 
     놓음 = 상품이 **양손 그리퍼 어느 마디에도** 쥐여 있지 않게 된 순간이다. 쥠은 `held`, 곧
@@ -608,14 +611,16 @@ def release_by_contact(held, P, b8, watch, size):
     상자 안에 내려놓았다 다른 곳을 다시 쥐기 -- 를 모두 허용하는 규칙이다 (사용자 결정 2026-10-05).
 
       - 상품이 상자 밖으로 처음 나온 프레임(`b8`) 전에 놓은 것은 보지 않는다 (상자 안에서 고쳐 쥐는 중).
-      - 놓은 뒤 `watch` 프레임(3 초) 안에 다시 쥐기 시작하면 그 놓음은 없던 것이다.
-      - 3 초 동안 다시 안 쥐었고 그때 상품이 선반 판 위(`board_under`)면 진열 완료 -- 그 프레임이 채점 시점이다.
+      - 놓은 뒤 `regrasp` 프레임(10 초, 주지 않으면 `watch`) 안에 다시 쥐기 시작하면 그 놓음은 없던 것이다.
+      - 그 안에 다시 안 쥐었고 놓은 뒤 `watch` 프레임(3 초) 때 상품이 선반 판 위(`board_under`)면 진열 완료 -- 그 3 초
+        프레임이 채점 시점이다. 기록이 10 초를 못 채우고 끝나도 그 사이에 다시 안 쥐었으면 진열 완료다.
       - 판 위가 아니면(탁자 위 · 상자 속 · 이웃 상품 위) 진열이 안 끝난 것이라 계속 본다. 다시 쥐면 새로 시작하고,
         끝까지 안 쥐면 기록의 끝(평가에서는 시간 한도)이 채점 시점이다.
 
     진열 완료를 못 찾으면 (마지막 놓은 프레임 또는 None, None) 이다.
     """
     n_all = len(held)
+    regrasp = watch if regrasp is None else max(int(regrasp), int(watch))
     runs, i = [], 0                      # 쥔 구간들 [시작, 끝)
     while i < n_all:
         if held[i]:
@@ -631,9 +636,9 @@ def release_by_contact(held, P, b8, watch, size):
         if r >= n_all or r < b8:
             continue
         nxt = runs[k + 1][0] if k + 1 < len(runs) else None
+        if nxt is not None and nxt <= r + regrasp:
+            continue                     # 10 초 안에 다시 쥠 -- 놓음이 아니다
         f = r + watch
-        if nxt is not None and nxt <= f:
-            continue                     # 3 초 안에 다시 쥠
         if f >= n_all:
             return r, (n_all, "released, record ended early")
         if board_under(P[f, :3], P[f, 3:7], size)[0] is not None:
@@ -713,7 +718,8 @@ def score_npz(path, products=None, end_frame=None):
         b8 = int(np.argmax(P[:, 2] > float(C[0, 2]) + CRATE_H)) if (P[:, 2] > float(C[0, 2]) + CRATE_H).any() else None
         if end_frame is None and CTG is not None and b8 is not None:
             release, rel_end = release_by_contact(HELD, P, b8, watch,
-                                                  tuple(float(v) for v in taskB_restock.product(name)["size"]))
+                                                  tuple(float(v) for v in taskB_restock.product(name)["size"]),
+                                                  regrasp=int(round(THRESHOLD["regrasp_s"] * hz)))
         elif end_frame is None and J is not None and b8 is not None:
             gi = {h: jnames.index(f"gripper_{h}_joint1") for h in "lr" if f"gripper_{h}_joint1" in jnames}
             hand = meta.get("pick_hand")
