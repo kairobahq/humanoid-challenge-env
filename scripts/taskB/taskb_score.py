@@ -25,7 +25,10 @@
 #                        접촉 센서 값(contact_N)을 주면 B6 는 그것으로도 참이 된다.
 #
 # 채점 종료는 시트대로 둘뿐이다. 둘 다 채점기가 스스로 찾는다:
-#   놓은 뒤 3초   잡고 있던 손의 gripper 가 열리는 프레임 + 3초 (score_npz 가 관절 기록에서 찾는다)
+#   놓은 뒤 3초   상품이 양손 그리퍼 어느 마디에도 쥐여 있지 않게 된 프레임 + 3초. 그 3초 안에 다시 쥐면 그 놓음은
+#                 없던 것이고, 3초 뒤 상품이 선반 판 위가 아니면(탁자 위 · 상자 속) 진열이 안 끝난 것이라 계속 본다
+#                 (score_npz 가 접촉 기록 `contact/grip{N}` 에서 찾는다, release_by_contact). 그 칸이 없는 옛 기록은
+#                 잡고 있던 손의 gripper 가 열리는 프레임 + 3초 (관절 기록)
 #   떨어짐        상자 밖으로 나온 뒤 어느 판에도 안 놓인 채 바닥에 밑면이 닿은 그 순간. 그 뒤는 안 본다
 #
 # 그리고 시트 [심사 유의사항]의 조합 중단 하나 -- 그 순간까지의 점수가 최종 점수다:
@@ -595,6 +598,50 @@ def held_by_contact(CT, hz: float):
     return out
 
 
+def release_by_contact(held, P, b8, watch, size):
+    """놓은 순간과 채점 시점 -- 접촉 기록이 있는 판 (2026-10-05). (놓은 프레임, (n, 까닭)) 을 돌려준다.
+
+    놓음 = 상품이 **양손 그리퍼 어느 마디에도** 쥐여 있지 않게 된 순간이다. 쥠은 `held`, 곧
+    `held_by_contact` 의 값(그리퍼 마디 여덟 중 하나와 0.5 N 이 0.3 초 이어짐)이다. 손을 따지지 않으므로
+    한 손에서 다른 손으로 넘겨 쥐는 것은 놓음이 아니고, 쥔 각도를 안 보므로 처음과 다른 곳을 다른 너비로
+    다시 쥐어도 된다. 참가자 문의(2026-10-05) 셋 -- 양손 넘겨 쥐기 · 상자 밖에 잠시 내려놓았다 다시 쥐기 ·
+    상자 안에 내려놓았다 다른 곳을 다시 쥐기 -- 를 모두 허용하는 규칙이다 (사용자 결정 2026-10-05).
+
+      - 상품이 상자 밖으로 처음 나온 프레임(`b8`) 전에 놓은 것은 보지 않는다 (상자 안에서 고쳐 쥐는 중).
+      - 놓은 뒤 `watch` 프레임(3 초) 안에 다시 쥐기 시작하면 그 놓음은 없던 것이다.
+      - 3 초 동안 다시 안 쥐었고 그때 상품이 선반 판 위(`board_under`)면 진열 완료 -- 그 프레임이 채점 시점이다.
+      - 판 위가 아니면(탁자 위 · 상자 속 · 이웃 상품 위) 진열이 안 끝난 것이라 계속 본다. 다시 쥐면 새로 시작하고,
+        끝까지 안 쥐면 기록의 끝(평가에서는 시간 한도)이 채점 시점이다.
+
+    진열 완료를 못 찾으면 (마지막 놓은 프레임 또는 None, None) 이다.
+    """
+    n_all = len(held)
+    runs, i = [], 0                      # 쥔 구간들 [시작, 끝)
+    while i < n_all:
+        if held[i]:
+            j = i
+            while j < n_all and held[j]:
+                j += 1
+            runs.append((i, j))
+            i = j
+        else:
+            i += 1
+    last = None
+    for k, (_s, r) in enumerate(runs):   # r = 쥔 구간이 끝난 다음 프레임 = 놓은 프레임
+        if r >= n_all or r < b8:
+            continue
+        nxt = runs[k + 1][0] if k + 1 < len(runs) else None
+        f = r + watch
+        if nxt is not None and nxt <= f:
+            continue                     # 3 초 안에 다시 쥠
+        if f >= n_all:
+            return r, (n_all, "released, record ended early")
+        if board_under(P[f, :3], P[f, 3:7], size)[0] is not None:
+            return r, (f + 1, "released+3s")
+        last = r                         # 판 위가 아님 -- 진열이 안 끝났다
+    return last, None
+
+
 def score_npz(path, products=None, end_frame=None):
     """State npz 한 판을 채점한다. 상자 속 상품마다 결과 하나. `products` 로 고르지 않으면
     meta.pick_product, 그것도 없으면 상자 속 전부.
@@ -662,8 +709,12 @@ def score_npz(path, products=None, end_frame=None):
         # 비겨 안 움직인 손을 고른다. 일곱 시연 실측: 잡음 0.68~0.92 rad, 놓음 0.00, 열림+3초는 기록 끝보다 23~80 프레임
         # 앞(기록기가 팔을 빼는 시간).
         release = None
+        rel_end = None       # 접촉 기록으로 찾은 (n, 까닭) -- release_by_contact
         b8 = int(np.argmax(P[:, 2] > float(C[0, 2]) + CRATE_H)) if (P[:, 2] > float(C[0, 2]) + CRATE_H).any() else None
-        if end_frame is None and J is not None and b8 is not None:
+        if end_frame is None and CTG is not None and b8 is not None:
+            release, rel_end = release_by_contact(HELD, P, b8, watch,
+                                                  tuple(float(v) for v in taskB_restock.product(name)["size"]))
+        elif end_frame is None and J is not None and b8 is not None:
             gi = {h: jnames.index(f"gripper_{h}_joint1") for h in "lr" if f"gripper_{h}_joint1" in jnames}
             hand = meta.get("pick_hand")
             if hand not in gi and gi:
@@ -700,6 +751,10 @@ def score_npz(path, products=None, end_frame=None):
                         release = b8 + int(shut_after[-1]) + 1
         if end_frame is not None:
             n, why = min(n_all, int(end_frame) + 1), "end_frame"
+        elif rel_end is not None:
+            n, why = rel_end
+        elif CTG is not None and release is not None:
+            n, why = n_all, "released, not on a shelf"
         elif release is not None and release + watch < n_all:
             n, why = release + watch + 1, "released+3s"
         elif release is not None:
@@ -750,6 +805,7 @@ ABORT_WORDS = {"crate_off_table": "상자가 탁자에서 떨어져 조합 중�
 WHY_END = {
     "released+3s": "손을 편 뒤 3초 -- 시트가 정한 판정 시점",
     "released, record ended early": "손을 폈지만 3초를 못 채우고 기록이 끝남",
+    "released, not on a shelf": "놓았지만 선반 판 위가 아니라(탁자 위 · 상자 속 등) 진열이 끝나지 않았고, 다시 쥐지 않아 기록의 마지막 프레임",
     "last": "기록의 마지막 프레임 -- 끝까지 손을 안 펴서 판정 시점을 못 찾음",
     "dropped": "상품 밑면이 편의점 바닥에 닿은 순간 -- 그 뒤는 안 봄",
     "crate_off_table": "파란 상자가 탁자에서 떨어진 순간 -- 조합 중단",
