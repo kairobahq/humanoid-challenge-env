@@ -797,7 +797,7 @@ def score_npz(path, products=None, end_frame=None):
 
 
 # ---- 화면 -----------------------------------------------------------------------------------
-END_WORDS = {"placed": "선반 위에 놓음", "dropped": "떨어뜨림", "in_hand": "든 채 끝남"}
+END_WORDS = {"placed": "선반 위에 놓음", "dropped": "떨어뜨림", "in_hand": "선반에 놓지 못하고 끝남"}
 ABORT_WORDS = {"crate_off_table": "상자가 탁자에서 떨어져 조합 중단"}
 
 # 채점을 **왜 그 프레임에서** 했나 -- 사람 말로. `end_by` 를 그대로 보여 주면 읽는 쪽이
@@ -850,7 +850,7 @@ def fmt_result(r):
     lines = [f"  {r['product']}  목표 L{r['target'][0]}c{r['target'][1]}  "
              f"{r['total']} / {r['total_max']}점  (프레임 {r['end_frame']}/{r.get('frames_total', r['frames'])} 에서 종료: "
              f"{m['end_reason']} · {m['end_by']}"
-             + (f", gripper 열림 @{r['release_frame']}" if r.get("release_frame") is not None else "")
+             + (f", 놓음 @{r['release_frame']}" if r.get("release_frame") is not None else "")
              + (f", 기록된 판정 {r['recorded_outcome']}" if r.get("recorded_outcome") else "") + ")"]
     why = reasons(r)
     for rid, sub, mx, kind, label in RUBRIC:

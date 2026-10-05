@@ -195,7 +195,7 @@ if SCORED is not None:
     print(f"[점수] 채점 대상 {SCORED['product']} → 목표 칸 L{_lay} c{_col} · 평가표 15항목 {taskb_score.TOTAL}점")
     print(f"[점수] 채점 종료 프레임 {SCORED['end_frame']} "
           f"({SCORED['end_frame'] / RECORD_HZ:.1f}초, {taskb_score.END_WORDS[SCORED['measured']['end_reason']]}"
-          + (f" -- gripper 열림 {SCORED['release_frame'] / RECORD_HZ:.1f}초 + 3초"
+          + (f" -- 놓음 {SCORED['release_frame'] / RECORD_HZ:.1f}초 + 3초"
              if SCORED["measured"]["end_by"] == "released+3s" else "") + ")\n", flush=True)
 else:
     print("[점수] 이 기록은 채점하지 못했다 (상자 속 상품의 빈 칸이 장부에 없다)\n", flush=True)
@@ -388,7 +388,7 @@ def main():
         why = taskb_score.reasons(SCORED)
         head = ("── 놓은 뒤 3초 ──" if m["end_reason"] == "placed"
                 else "── product 가 떨어졌다: 채점 종료 ──" if m["end_reason"] == "dropped"
-                else "── 기록 끝 (product 를 든 채) ──")
+                else "── 기록 끝 (선반에 놓지 못하고 끝남) ──")
         print(f"[점수] {i / RECORD_HZ:6.1f}초  {head}", flush=True)
         for rid, _sub, mx, kind, label in taskb_score.RUBRIC:
             if kind != "at":
