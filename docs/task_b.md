@@ -56,6 +56,8 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 
 기록된 관절 각도와 상품 위치를 프레임마다 그대로 옮겨 그립니다. 재생하면서 채점기(`scripts/taskB/taskb_score.py`)가 점수를 딴 순간을 터미널에 찍습니다.
 
+> 재생기에 `--zed-depth` 를 주면 실기 로봇처럼 ZED SDK 가 계산한 머리 depth 와 시뮬레이션 정답 depth 를 나란히 남깁니다 (세 과제 공통, [실기 같은 머리 depth](zed_depth.md)).
+
 ```text
 [점수] 채점 대상 samyang_buldak_cup → 목표 칸 L2 c2 · 평가표 15항목 34점
 [점수]    8.3초  product 에 닿았는가             +1   누적  1/34

@@ -61,6 +61,13 @@ parser.add_argument("--substeps", type=int, default=4,
 parser.add_argument("--hz", type=float, default=40.0,
                     help="초당 그리는 장 수의 상한. substeps 와 곱이 10 이면 실제 속도.")
 parser.add_argument("--list", action="store_true", help="들어 있는 판을 찍고 끝낸다.")
+# 실기 같은 머리 depth (--zed-depth) -- 과제 A · B · C 공용 부품 zed_depth/zed_record.py. Isaac 을 부르지 않아 여기서 읽는다.
+import importlib.util as _ilu_z   # noqa: E402
+_zs = _ilu_z.spec_from_file_location(
+    "zed_record", os.path.join(os.path.dirname(os.path.abspath(__file__)), "zed_depth", "zed_record.py"))
+ZR = _ilu_z.module_from_spec(_zs)
+_zs.loader.exec_module(ZR)
+ZR.add_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 parser.set_defaults(device="cpu")     # 환경 하나뿐이라 GPU 파이프라인은 손해다
 args_cli = parser.parse_args()
@@ -242,6 +249,9 @@ class World(InteractiveSceneCfg):
         data_types=["rgb"],
         update_latest_camera_pose=True,
     )
+    # --zed-depth 일 때만 머리 두 눈 (zed_depth/zed_record.py). 끄면 None 이라 장면에 안 들어간다.
+    zed_left = ZR.camera_cfgs(REALCAM)["zed_left"] if args_cli.zed_depth else None
+    zed_right = ZR.camera_cfgs(REALCAM)["zed_right"] if args_cli.zed_depth else None
 
     def __post_init__(self):
         self.shelf = taskB_shelf.taskB_shelf_cfg(FRONT_X)
@@ -311,6 +321,7 @@ def main():
         sim_utils.SimulationCfg(dt=PHYSICS_DT, device=args_cli.device))
     scene = InteractiveScene(World(num_envs=1, env_spacing=8.0))
     _store_scene_fixups()
+    light_info = ZR.jitter_lights("/World/envs/env_0/StoreBg", args_cli) if args_cli.zed_depth else None
     sim.reset()
 
     robot = scene["robot"]
@@ -368,6 +379,9 @@ def main():
         return q[take], r, p
 
     sub = max(1, args_cli.substeps)
+    zrec = (ZR.Recorder(scene, sim, args_cli, f"task_b_demo_{args_cli.seed:02d}", RECORD_HZ, PHYSICS_DT,
+                        extra={"task": "B", "demo": os.path.basename(DEMO), "lighting": light_info})
+            if args_cli.zed_depth else None)
     total = (NFRAMES - 1) * sub + 1
     print(f"[i] 재생 시작 -- {total} 장", flush=True)
     t0 = time.time()
@@ -411,6 +425,8 @@ def main():
             scene.update(PHYSICS_DT)
             sim.render()
             drawn += 1
+            if zrec is not None and k == 0:
+                zrec.capture(i)
             if args_cli.hz > 0:
                 due = t0 + drawn / args_cli.hz
                 wait = due - time.time()
@@ -418,10 +434,14 @@ def main():
                     time.sleep(wait)
             if not simulation_app.is_running():
                 print("[i] 창이 닫혔다.", flush=True)
+                if zrec is not None:
+                    zrec.close()
                 return
         if i % 200 == 0:
             print(f"[i] {i}/{NFRAMES} 프레임 ({time.time() - t0:.0f} 초)", flush=True)
     print(f"[i] 끝 -- {drawn} 장을 {time.time() - t0:.0f} 초에 그렸다.", flush=True)
+    if zrec is not None:
+        zrec.close()
     if not args_cli.headless:
         print("[i] 마지막 자세로 20 초 세워 둔다 (Ctrl+C 로 바로 닫기)", flush=True)
         end = time.time() + 20.0
