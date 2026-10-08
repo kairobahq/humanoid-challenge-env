@@ -123,7 +123,7 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 
 한 에피소드는 상품마다 8국면(접근 · 파지 · 들어 올림 · 스캔 2회 · 내려놓기 · 후퇴 · 복귀)입니다. 끝나면 상품별 최대 들림, 스캐너 최근접 거리, 최종 배치를 출력하고 `--summary-json` 으로 저장합니다.
 
-> 재생기에 `--zed-depth` 를 주면 실기 로봇처럼 ZED SDK 가 계산한 머리 depth 와 시뮬레이션 정답 depth 를 나란히 남깁니다 (세 과제 공통, [실기 같은 머리 depth](zed_depth.md)).
+> 재생기에 `--zed-depth` 를 주면, 재생기가 ZED SDK 로 머리 depth 를 계산해 저장합니다. 설명은 [실기 같은 머리 depth](zed_depth.md) 에 있습니다.
 
 #### 허깅페이스 학습 데이터 직접 재생
 

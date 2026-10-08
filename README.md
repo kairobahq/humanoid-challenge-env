@@ -97,7 +97,7 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u <스크립트.py> --headless --enable_c
 
 시뮬레이션 에셋 디렉토리 구조는 **[환경 에셋 구조](docs/assets.md)** 를 참고하세요.
 
-세 과제의 재생기에 `--zed-depth` 를 주면 실기 로봇처럼 ZED SDK 가 계산한 머리 depth 를 시뮬레이션 정답 depth 와 나란히 남깁니다 — **[실기 같은 머리 depth](docs/zed_depth.md)**.
+세 과제의 재생기에 `--zed-depth` 를 주면, 재생기가 ZED SDK 로 머리 depth 를 계산해 저장합니다. 설명은 **[실기 같은 머리 depth](docs/zed_depth.md)** 를 참고하세요.
 
 ## GUI 화면으로 시뮬레이터 실행하기
 
