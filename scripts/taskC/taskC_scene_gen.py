@@ -6,9 +6,10 @@
 #   rand       `taskC_deal_rand` + `taskC_check_rand`   QR 면이 무작위 방위 (360 도). 바닥 닿는 면과
 #                                                       자리 규칙(띠·8 cm·그리퍼)은 같다
 #
-# 평가는 3 회차다. **앞 두 회차는 qr_right, 마지막 회차는 rand** 가 기본이다 (`auto`).
-# 회차는 시드로 정한다: 회차 = 시드 % 3 -> 0·1 은 qr_right, 2 는 rand. 평가 표본 시드 0·1·2 가
-# 곧 1·2·3 회차다. 같은 시드는 언제나 같은 생성기 -> 같은 장면이다.
+# 기본은 **qr_right** 다 -- 평가는 모든 회차가 qr_right 다 (2026-10-08: rand 회차는 검토했으나
+# 평가에 쓰지 않기로 했다). rand 는 연습용으로 남겨 두며 직접 골라야 나온다.
+# `auto` 는 둘을 시드로 섞는 모드다: 시드 % 3 -> 0·1 은 qr_right, 2 는 rand. 평가 규칙이 아니다.
+# 같은 모드 · 같은 시드는 언제나 같은 생성기 -> 같은 장면이다.
 #
 # 고르는 곳은 이 파일 하나다. 쓰는 쪽은
 #
@@ -16,24 +17,24 @@
 #     kind = SG.resolve(mode, seed)        # mode: "auto" | "qr_right" | "rand"
 #     D, K = SG.modules(kind)              # D.deal / D.pick_products / D.Infeasible, K.check_settled ...
 #
-# mode 를 안 주면 환경변수 `TASKC_SCENE_GEN` 을, 그것도 없으면 "auto" 를 쓴다.
+# mode 를 안 주면 환경변수 `TASKC_SCENE_GEN` 을, 그것도 없으면 "qr_right" 를 쓴다.
 
 import os
 
 MODES = ("auto", "qr_right", "rand")
 KINDS = ("qr_right", "rand")
-EPISODES = 3            # 평가 회차 수
-RAND_EPISODE = 2        # 0 부터 센 회차 번호 -- 마지막(3 번째) 회차가 rand
+EPISODES = 3            # auto 가 시드를 나누는 수
+RAND_EPISODE = 2        # auto 에서 rand 가 되는 나머지 (시드 % 3 == 2)
 ENV = "TASKC_SCENE_GEN"
 
 
 def default_mode():
-    """플래그가 없을 때의 모드: 환경변수 `TASKC_SCENE_GEN`, 없으면 "auto"."""
-    return os.environ.get(ENV, "auto").strip() or "auto"
+    """플래그가 없을 때의 모드: 환경변수 `TASKC_SCENE_GEN`, 없으면 "qr_right"."""
+    return os.environ.get(ENV, "qr_right").strip() or "qr_right"
 
 
 def episode_of(seed):
-    """시드의 회차 (0 부터). 평가 표본 시드 0·1·2 -> 0·1·2."""
+    """auto 가 쓰는 시드의 나머지 (시드 % 3)."""
     return int(seed) % EPISODES
 
 

@@ -55,7 +55,7 @@ scripts/taskC/
   taskC_check.py        스폰 검증 — 배치 구역 안쪽, 상판 관통, 넘어짐, QR 방위 오차 3도, 상품 간격 8cm
   taskC_deal_rand.py    랜덤 방위 씬 생성기 — taskC_deal 과 같은 API, QR 면 방위만 무작위(360°) (2026-09-26)
   taskC_check_rand.py   랜덤 방위 장면의 스폰 검증 — taskC_check 에서 QR 방위 오차 검사만 뺀 판
-  taskC_scene_gen.py    생성기 고르기 — auto(평가 3 회차 중 마지막 = 시드 % 3 == 2 만 rand) · qr_right · rand
+  taskC_scene_gen.py    생성기 고르기 — qr_right(기본) · rand · auto(시드 % 3 == 2 만 rand, 연습용)
   selftest_scene_rand.py  위 세 파일의 자체 시험 (Isaac 없이)
   taskC_report.py       장면 요약을 터미널에 찍고 --scene-json 파일로 저장
   taskC_counter.py      배치 구역을 빨간 테이프로 그리고, 매장 기본 스캐너·바구니와 계산대 하단 선반 제거
