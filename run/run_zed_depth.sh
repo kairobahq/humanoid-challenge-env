@@ -17,13 +17,13 @@ DOCKER_DIR="$HERE/../docker"
 docker compose -f "$DOCKER_DIR/docker-compose.yaml" -f "$DOCKER_DIR/zed.yaml" up -d
 echo "ZED depth 서버가 뜨기를 기다린다 (처음에는 NEURAL 모델 최적화로 몇 분) ..."
 for _ in $(seq 1 240); do
-  docker logs zed_depth 2>&1 | grep -q "기다립니다" && break
+  docker logs zed_depth 2>&1 | grep "기다립니다" >/dev/null && break
   if [ "$(docker inspect -f '{{.State.Running}}' zed_depth 2>/dev/null)" != "true" ]; then
     echo "zed_depth 컨테이너가 멈췄다 -- docker logs zed_depth 를 본다" >&2; exit 1
   fi
   sleep 5
 done
-docker logs zed_depth 2>&1 | grep -q "기다립니다" || { echo "20 분 안에 뜨지 않았다 -- docker logs zed_depth" >&2; exit 1; }
+docker logs zed_depth 2>&1 | grep "기다립니다" >/dev/null || { echo "20 분 안에 뜨지 않았다 -- docker logs zed_depth" >&2; exit 1; }
 
 ARGS=(--headless --zed-depth)
 # 과제 A · B 는 기록을 써 넣는 재생이라 사이를 채워 그릴 까닭이 없다. 과제 C 는 물리로 트므로 --substeps 를 건드리지 않는다.
