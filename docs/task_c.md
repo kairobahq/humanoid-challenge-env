@@ -46,7 +46,7 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 * **`--seed` (환경 시드):** 고유 장면 번호입니다. 모든 시드가 같은 방식으로 배치(딜)됩니다. 정답 궤적(`--set gt`)은 새 구성으로 다시 수집하는 중이라 이번 배포에는 빠져 있습니다. 준비되는 대로 올리겠습니다. 다시 실을 때 시드 0·1·2 를 그 장면에 묶어 두겠습니다.
 * **`--scene-file` (장면 파일 지정):** 무작위 배치를 하지 않고 제공된 장면 JSON 파일(`--scene-json` 출력 또는 동봉 기록의 `taskC_qr_scene_*.json`)에 기록된 상품 자세를 그대로 로드합니다. 정답 궤적 재생 및 채점 로직 검증 시 사용합니다.
 * **`--products` (상품 강제 지정):** 코드 식별자 3개를 쉼표로 연결하여 전달하면 시드가 결정하는 상품 대신 해당 상품 3개를 강제로 사용합니다. **첫 번째 식별자가 목표 상품이 됩니다.** (예: `--products cocacola_zero,lotte_sand,yegam_original`)
-* **`--scene-gen` (씬 생성기 선택, 2026-09-26 추가):** `auto`(기본) · `qr_right` · `rand` 중 하나입니다. 아래 「씬 생성기 두 벌」을 보십시오.
+* **`--scene-gen` (씬 생성기 선택, 2026-09-26 추가):** `qr_right`(기본) · `rand` · `auto` 중 하나입니다. 아래 「씬 생성기 두 벌」을 보십시오.
 * *참고:* 스폰 뒤 3초간 물리로 정착시키고, 띠 밖으로 밀리거나 넘어지거나 QR 방위가 3° 넘게 틀어지거나(`qr_right` 만) 간격이 8 cm 미만이면 같은 시드 안에서 최대 50회 재배치합니다. 출력 좌표는 **정착 후 실측값**입니다.
 * *재배치를 다 써도 규칙을 못 지키면 장면을 만들지 않고 실패로 끝냅니다.* 표면 간격 8 cm 는 필수 조건이라, 어긴 배치를 내보내지 않습니다.
 * **간격 8 cm 의 근거:** 상품이 놓일 띠 안쪽은 26 × 55 cm 입니다. 여기에 상품 3 개를 서로 떼어 놓아야 하는데, 더 넓게 잡으면 **예감(긴 변 21 cm)과 컵라면 2종(삼양 불닭컵 · 오뚜기 컵누들 불닭)이 한꺼번에 나오는 조합**처럼 자리가 아예 안 나오는 경우가 생깁니다. 8 cm 면 8 종 중 3 종을 고르는 **56 개 조합이 모두** 놓입니다(2026-09-12 실측 224/224).
@@ -58,9 +58,9 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 | `qr_right` | `taskC_deal` / `taskC_check` | 정 오른쪽(월드 -Y) 고정, 정착 후 ±3° | 종전 그대로 |
 | `rand` | `taskC_deal_rand` / `taskC_check_rand` | **무작위 360°** (월드 z 축 둘레 균일) | `qr_right` 와 같음 |
 
-* **평가 3 회차 중 앞 두 회차는 `qr_right`, 마지막 회차는 `rand` 입니다.** `--scene-gen auto`(기본값)가 이 규칙을 따릅니다. 회차는 시드로 정합니다: **회차 = 시드 % 3** → 나머지 0·1 은 `qr_right`, 2 는 `rand`. 평가 표본 시드 0·1·2 가 곧 1·2·3 회차입니다. 같은 시드는 언제나 같은 생성기, 같은 장면입니다.
+* **평가는 모든 회차가 `qr_right` 입니다 (2026-10-08).** 마지막 회차를 `rand` 로 두는 안은 검토했으나 평가에 쓰지 않기로 했습니다. 기본값도 `qr_right` 라서 옵션을 주지 않으면 모든 시드가 QR 정 오른쪽 장면입니다. `rand` 는 연습용으로 남겨 두며, `--scene-gen rand` 로 직접 골라야 나옵니다. `--scene-gen auto` 는 둘을 시드로 섞는 연습용 모드입니다(시드 % 3 이 0·1 이면 `qr_right`, 2 이면 `rand`). 같은 모드 · 같은 시드는 언제나 같은 장면입니다.
 * **`rand` 에서 달라지는 것은 QR 이 보는 방위뿐입니다.** 바닥에 닿는 면(원통은 직립, 절반은 뒤집어 세움 · 상자는 허용된 바닥면으로 눕힘), 스폰 높이, 띠 안쪽, 상품 표면-표면 8 cm, 왼손 그리퍼 아래 비움, 목표 상품이 상자일 때의 근측 편향은 `qr_right` 와 같습니다. 구현은 `qr_right` 의 자세에 월드 z 축 둘레 무작위 회전을 한 번 더 곱한 것이라, 어느 면이 바닥에 닿는지와 높이가 수식으로 같습니다. 상자를 비스듬히 돌리면 차지하는 사각형이 커지는데, 간격은 돌려 놓은 사각형으로 잽니다.
-* **QR 이 로봇 반대편을 볼 수 있습니다.** 그 회차에서는 상품을 들어 돌려야 스캐너에 QR 이 닿습니다. 채점 규칙(파지 · 들기 · 조준 · 판독 · 놓기)은 두 생성기가 같습니다.
+* **`rand` 에서는 QR 이 로봇 반대편을 볼 수 있습니다.** 그 장면에서는 상품을 들어 돌려야 스캐너에 QR 이 닿습니다. 채점 규칙(파지 · 들기 · 조준 · 판독 · 놓기)은 두 생성기가 같습니다.
 * 정착 후 검사는 생성기마다 짝이 있습니다. `rand` 장면을 `taskC_check`(QR 방위 ±3° 검사 포함)로 보면 끝없이 재배치되므로, `taskC_check_rand`(그 검사 하나만 뺀 판)를 씁니다.
 * 동봉된 장면 파일(`scenes/`, `scenes/release2/`)과 학습 데이터는 모두 `qr_right` 로 만든 것입니다. `--scene-json` 출력에는 `"scene_gen"` 항목으로 어느 생성기로 만든 장면인지 적힙니다.
 
@@ -71,7 +71,7 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 ${ISAACLAB_PATH}/_isaac_sim/python.sh -u /workspace/challenge_scripts/task_c_demo.py --seed 7 --scene-gen rand
 # 2) 환경변수 (플래그가 없을 때 쓰임): auto | qr_right | rand
 TASKC_SCENE_GEN=qr_right ${ISAACLAB_PATH}/_isaac_sim/python.sh -u /workspace/challenge_scripts/task_c_demo.py --seed 2
-# 3) run 스크립트: run/run_task_c.sh 의 SCENE_GEN (기본 auto)
+# 3) run 스크립트: run/run_task_c.sh 의 SCENE_GEN (기본 qr_right)
 SCENE_GEN=rand bash run/run_task_c.sh
 ```
 
@@ -82,14 +82,14 @@ from taskC import taskC_deal as D          # 종전 (QR 정 오른쪽)
 from taskC import taskC_deal_rand as D     # 무작위 방위
 from taskC import taskC_check_rand as K    # rand 장면의 정착 검사 (taskC_check 와 같은 API)
 
-# 또는 회차 규칙까지 한 번에
+# 또는 모드와 시드로 고르기
 from taskC import taskC_scene_gen as SG
-D, K = SG.modules(SG.resolve("auto", seed))   # seed % 3 == 2 면 rand
+D, K = SG.modules(SG.resolve("auto", seed))   # auto: seed % 3 == 2 면 rand
 ```
 
-**`auto` 기본값의 영향:** 종전에는 모든 시드가 `qr_right` 였습니다. 이제 시드 % 3 == 2 인 시드를 새로 깔면 `rand` 장면이 나옵니다. 종전 장면이 필요하면 `--scene-gen qr_right`(또는 `TASKC_SCENE_GEN=qr_right`)를 주십시오. 이미 만들어 둔 장면 파일을 `--scene-file` 로 쓰는 경우는 영향이 없습니다.
+**기본값 변경 (2026-10-08):** 2026-09-26 부터 기본값이 `auto` 여서 시드 % 3 == 2 인 시드는 `rand` 장면이 나왔습니다. 이제 기본값이 `qr_right` 로 돌아가 모든 시드가 QR 정 오른쪽 장면입니다. `TASKC_SCENE_GEN=auto` 나 `--scene-gen auto` 를 직접 주던 경우에는 여전히 `rand` 가 섞이니 빼 주십시오. 이미 만들어 둔 장면 파일을 `--scene-file` 로 쓰는 경우는 영향이 없습니다.
 
-**자체 시험** (Isaac 없이 수 분): `cd scripts && TASKC_ASSETS=<에셋 뿌리> python3 -m taskC.selftest_scene_rand` — 회차 규칙, 바닥면·높이 불변, 방위 360° 분포, 띠·간격·그리퍼 규칙, 방위 외 정착 판정이 `taskC_check` 와 같은지, 재배치 성공률을 봅니다.
+**자체 시험** (Isaac 없이 수 분): `cd scripts && TASKC_ASSETS=<에셋 뿌리> python3 -m taskC.selftest_scene_rand` — `auto` 의 시드 규칙, 바닥면·높이 불변, 방위 360° 분포, 띠·간격·그리퍼 규칙, 방위 외 정착 판정이 `taskC_check` 와 같은지, 재배치 성공률을 봅니다.
 
 ### 4. Headless 모드를 활용한 빠른 데이터 추출
 

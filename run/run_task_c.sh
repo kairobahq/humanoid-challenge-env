@@ -2,11 +2,11 @@
 # 과제 C 의 시작 장면을 GUI 로 한 번 세워 띄운다. X11 세션의 호스트에서 실행할 것.
 # 창이 뜨기까지 30~60 초 걸리고 그동안 경고가 잔뜩 나온다. 정상이다.
 # 다른 장면을 보려면 아래 SEED 를 바꾸거나, 컨테이너에 들어가 --seed 를 직접 준다.
-# 씬 생성기(2026-09-26): SCENE_GEN=auto(기본, 시드 % 3 == 2 만 rand) | qr_right | rand
+# 씬 생성기(2026-09-26): SCENE_GEN=qr_right(기본) | rand | auto(시드 % 3 == 2 만 rand)
 #   예) SCENE_GEN=rand bash run/run_task_c.sh
 set -euo pipefail
 SEED=1000
-SCENE_GEN="${SCENE_GEN:-auto}"
+SCENE_GEN="${SCENE_GEN:-qr_right}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$HERE/../docker"
 
