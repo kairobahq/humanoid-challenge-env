@@ -762,7 +762,7 @@ def main():
                                                     (scene[f"p_{k}"].data.root_pos_w[0] - origin).cpu().numpy())),
                          quat=L.quat_world_to_robot(scene[f"p_{k}"].data.root_quat_w[0].cpu().numpy()))
                     for k, d in enumerate(PRODUCTS)]
-            _ok = K.check_settled(_res)
+            _ok, _res = K.check_settled(_res)
             if _ok:
                 break
             _try += 1
