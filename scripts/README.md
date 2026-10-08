@@ -12,7 +12,7 @@
 | `task_c_demo.py` | **과제 C 의 시작 장면**을 하나 만들어 띄웁니다 |
 | `task_c_replay.py` | **과제 C 한 판**(상품 3개 연속 또는 1개)을 물리로 다시 틀어 줍니다. |
 | `taskA/` | 과제 A 의 **장면 정의 모듈과 실측값**. 위 데모가 읽습니다 |
-| `zed_depth/` | 세 재생기의 `--zed-depth` 가 쓰는 **실기 같은 머리 depth** 부품 (ZED SDK 컨테이너의 depth 서버 포함, `docs/zed_depth.md`) |
+| `zed_depth/` | 세 재생기의 `--zed-depth` 가 쓰는 **머리 depth 부품**과 ZED SDK 컨테이너의 depth 서버 (`docs/zed_depth.md`) |
 | `taskB/` | 과제 B 의 **채점기**(`taskb_score.py`)와 `task_b_replay.py`가 트는 **시연 기록 일곱 판**(`demos/`, 2.4 MB) |
 | `taskC/` | 과제 C 의 **장면 정의 모듈**, `task_c_replay.py` 가 트는 **시연 기록**(`demos/` 품목별 4편, `demos_gt/` 정답 궤적 2편 — GT0 은 상품 3개 모두 성공, GT1 은 1개 실패), **장면 파일 1,089 + 560개**(`scenes/`, `scenes/release2/`), **기타 진열대 진열 12벌**(`stores/`), **채점기**(`scorer/`) |
 
