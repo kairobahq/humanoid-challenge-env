@@ -93,13 +93,18 @@ parser.add_argument("--record_h", type=int, default=800, help="chase 그림 세�
 parser.add_argument("--as_recorded", action="store_true",
                     help="진열을 **기록이 찍힌 그대로** 짓는다. 기본값은 seed 규칙대로 짓는 것이라 "
                          "`task_a_demo.py --seed N` 과 같은 매장이 나온다. 차이는 화면에 적힌다.")
+# 실기 같은 머리 depth (--zed-depth) -- 과제 A · B · C 공용 부품 zed_depth/zed_record.py. Isaac 을 부르지 않아 여기서 읽는다.
+_zs = _ilu.spec_from_file_location("zed_record", os.path.join(_HERE, "zed_depth", "zed_record.py"))
+ZR = _ilu.module_from_spec(_zs)
+_zs.loader.exec_module(ZR)
+ZR.add_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 parser.set_defaults(device="cpu")     # 환경 하나뿐이고 물리가 결과를 정하지도 않는다
 args_cli = parser.parse_args()
 
 # 카메라를 달려면 이 깃발이 있어야 한다 -- 없으면 Isaac 이 스폰 자체를 막는다
 # (`task_a_demo.py:79` 가 같은 이유로 켠다).  `--record` 를 안 주면 건드리지 않는다.
-if args_cli.record:
+if args_cli.record or args_cli.zed_depth:
     args_cli.enable_cameras = True
 
 import numpy as np   # noqa: E402
@@ -328,6 +333,11 @@ class World(InteractiveSceneCfg):
                     focal_length=18.0, focus_distance=400.0,
                     horizontal_aperture=20.955, clipping_range=(0.05, 60.0)))
 
+        # --zed-depth 일 때만 머리 두 눈 (zed_depth/zed_record.py). 끄면 여기는 통째로 건너뛴다.
+        if args_cli.zed_depth:
+            for _k, _v in ZR.camera_cfgs(REALCAM).items():
+                setattr(self, _k, _v)
+
         self.basket = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Basket",
             spawn=sim_utils.UsdFileCfg(usd_path=taskA_layout.BASKET_USD,
@@ -373,6 +383,7 @@ def main():
     stools.measure_home()
     stools.place(SEAT)
     stools.park_others(SEATS, SEAT_ID)
+    light_info = ZR.jitter_lights("/World/envs/env_0/Store", args_cli) if args_cli.zed_depth else None
 
     sim.reset()
     scene.update(PHYSICS_DT)
@@ -536,6 +547,10 @@ def main():
         _Image.fromarray(rgb).save(os.path.join(_rec_dir, "chase", "%06d.png" % i))
         _rec_n[0] += 1
 
+    zrec = (ZR.Recorder(scene, sim, args_cli, f"task_a_demo_{args_cli.seed:02d}", FPS, PHYSICS_DT,
+                        extra={"task": "A", "demo": os.path.basename(DEMO), "lighting": light_info})
+            if args_cli.zed_depth else None)
+
     start = max(0, min(NFRAMES - 1, int(args_cli.from_seconds * FPS)))
     sub = max(1, args_cli.substeps)
     total = (NFRAMES - 1 - start) * sub + 1
@@ -579,6 +594,8 @@ def main():
         sim.step(render=True)
         scene.update(PHYSICS_DT)
         _shoot(i, t)
+        if zrec is not None and t == 0.0:
+            zrec.capture(i)
         if period:
             late = t0 + n * period - time.time()
             if late > 0:
@@ -587,6 +604,8 @@ def main():
             print("[i] 창이 닫혔습니다.", flush=True)
             break
 
+    if zrec is not None:
+        zrec.close()
     if shown >= 0:
         announce(SEG_GROUP.get(SEG_NAMES[shown]))    # 마지막 토막
     announce("전체")                                  # 판 내내 보는 항목

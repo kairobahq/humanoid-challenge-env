@@ -1,0 +1,32 @@
+# 실기 같은 머리 depth 오버레이 -- docker-compose.yaml 위에 겹쳐서 ZED SDK 컨테이너(zed_depth)를 하나 더 띄웁니다.
+#   기동:  docker compose -f docker-compose.yaml -f zed.yaml up -d
+#   설명:  docs/zed_depth.md
+# zed_depth 는 scripts/zed_depth/zed_depth_server.py 를 돌려 127.0.0.1:7300 에서 기다립니다. challenge_env 의 재생기가
+# --zed-depth 로 두 눈 그림을 보내면 ZED SDK(NEURAL)가 계산한 depth 를 돌려줍니다. 처음 한 번은 NEURAL 모델을 이 GPU 에
+# 맞추느라 몇 분 걸리고, 그 결과는 zed-resources 볼륨에 남아 다음부터는 바로 뜹니다.
+services:
+  zed_depth:
+    build: ./zed
+    image: humanoid-challenge-zed:5.5.0
+    container_name: zed_depth
+    init: true
+    # 호스트 네트워크: challenge_env 의 재생기가 127.0.0.1:7300 으로 붙습니다.
+    network_mode: host
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      # 영상 인코더(libnvidia-encode)가 있어야 그림을 ZED SDK 로 넘길 수 있습니다.
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - ../scripts:/workspace/challenge_scripts:ro
+      - zed-resources:/usr/local/zed/resources
+    command: ["python3", "-u", "/workspace/challenge_scripts/zed_depth/zed_depth_server.py"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+
+volumes:
+  zed-resources:

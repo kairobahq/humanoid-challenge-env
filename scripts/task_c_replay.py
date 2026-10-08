@@ -83,6 +83,13 @@ parser.add_argument("--trace", default=None, metavar="DIR",
 parser.add_argument("--summary-json", default=None, metavar="FILE.json",
                     help="재생 결과 요약(상품 이동·들림·스캐너 접근·최종 자리)을 JSON 으로 저장한다.")
 parser.add_argument("--list", action="store_true", help="들어 있는 판을 찍고 끝낸다.")
+# 실기 같은 머리 depth (--zed-depth) -- 과제 A · B · C 공용 부품 zed_depth/zed_record.py. Isaac 을 부르지 않아 여기서 읽는다.
+import importlib.util as _ilu_z   # noqa: E402
+_zs = _ilu_z.spec_from_file_location(
+    "zed_record", os.path.join(os.path.dirname(os.path.abspath(__file__)), "zed_depth", "zed_record.py"))
+ZR = _ilu_z.module_from_spec(_zs)
+_zs.loader.exec_module(ZR)
+ZR.add_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 parser.set_defaults(device="cpu")
 args_cli = parser.parse_args()
@@ -405,6 +412,9 @@ class World(InteractiveSceneCfg):
     head_cam = _cam("head_cam")
     left_wrist_cam = _cam("left_wrist_cam")
     right_wrist_cam = _cam("right_wrist_cam")
+    # --zed-depth 일 때만 머리 두 눈 (zed_depth/zed_record.py). 끄면 None 이라 장면에 안 들어간다.
+    zed_left = ZR.camera_cfgs()["zed_left"] if args_cli.zed_depth else None
+    zed_right = ZR.camera_cfgs()["zed_right"] if args_cli.zed_depth else None
 
     def __post_init__(self):
         if _QR_IMG:
@@ -518,6 +528,7 @@ def main():
             _log("V4-311 스캐너 프림 없음 -- 건너뜀")
     except Exception as _e11:
         _log("V4-311 필터 불가: %r" % (_e11,))
+    light_info = ZR.jitter_lights("/World/envs/env_0/Store", args_cli) if args_cli.zed_depth else None
     sim.reset()
     counter.draw_band(log=_log)
     band_shader = counter.bind_band_idle(stage, log=_log)
@@ -871,6 +882,9 @@ def main():
         trace.q_free_close = args_cli.q_free_close
         _log("[TRACE] %s 에 관측을 남긴다" % args_cli.trace)
     print(f"[재생] 시작 -- 첫 프레임 자세로 {args_cli.start_hold:.1f} 초 세운 뒤 튼다\n", flush=True)
+    zrec = (ZR.Recorder(scene, sim, args_cli, f"task_c_{os.path.basename(str(EPISODE).rstrip('/'))}", REC_HZ, PHYSICS_DT,
+                        extra={"task": "C", "episode": str(EPISODE), "lighting": light_info})
+            if args_cli.zed_depth else None)
     for k in range(N):
         if k in ph_at:
             print(f"[재생] {k / REC_HZ:6.1f}초  국면 {ph_at[k]}", flush=True)
@@ -898,6 +912,8 @@ def main():
                 led.tick(PHYSICS_DT)
         if _REC_DIR:
             _rec_frame(k)
+        if zrec is not None:
+            zrec.capture(k)
         if recog is not None and weld.get("on") and "fq" in weld:
             _nm = ph_at.get(k)
             if _nm is not None:
@@ -991,6 +1007,8 @@ def main():
             el = _time.time() - t_wall
             print(f"[재생] {k / REC_HZ:6.1f}초 / {N / REC_HZ:.1f}초  (실시간 대비 x{(k / REC_HZ) / max(el, 1e-6):.2f})", flush=True)
 
+    if zrec is not None:
+        zrec.close()
     if trace is not None:
         if qr is not None:
             trace.qr = qr.report()
