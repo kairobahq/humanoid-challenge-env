@@ -977,7 +977,20 @@ def main():
                   % (_cn, _dst, _rgb.shape[1], _rgb.shape[0]), flush=True)
 
 
-main()
+# 2026-10-09: main 이 거부(SystemExit)나 오류로 끝나면 아래 종료 장치에 닿지 못해, Isaac 이
+# 종료 도중 멈춘 채 프로세스가 남았다 (실측: 시드 5 가 "규칙을 못 지켰다" 로 거부된 뒤 38 분).
+# 사유를 찍고 종료 코드 1 로 바로 끝낸다.
+try:
+    main()
+except BaseException as _e:
+    if isinstance(_e, SystemExit):
+        print(_e.code, file=sys.stderr, flush=True)
+    else:
+        import traceback as _tb
+        _tb.print_exc()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(1)
 _exit_guard = _threading.Timer(10.0, os._exit, (0,))
 _exit_guard.daemon = True
 _exit_guard.start()
