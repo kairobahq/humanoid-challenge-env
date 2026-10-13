@@ -202,31 +202,32 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 
 ---
 
-## 태스크 D — 과제 B 의 모의판 (목표 선반만 바꿨다)
+## `task_d_demo.py`
 
-| 파일 | 무엇 |
-|---|---|
-| `task_d_demo.py` | 시작 장면 하나를 띄운다. `--seed --seconds --settle --shot --scene-json --no-clutter --check` |
-| `taskD/taskD_scene_seed.py` | **씨앗 규칙 전부.** 씨앗 하나 → 선반·크레이트·배경 세 스트림. md5 파생 |
-| `taskD/taskD_layout.py` | 자리와 에셋 경로. 씨앗과 무관한 것 전부. `CYCLOLAB_PATH` 우선 |
-| `taskD/taskD_shelf.py` | 3 단 선반의 기하와 스폰. **판은 맨 위 한 장뿐** |
-| `taskD/taskD_stock.py` | 맨 위 판에 무엇이 서고 어느 한 자리가 비는지. `attach(cfg, shelf_seed) -> int` |
-| `taskD/taskD_crate.py` | 크레이트와 책상, 그리고 크레이트에 든 하나. `attach(cfg, shelf_seed, crate_seed) -> int` |
-| `taskD/taskD_clutter.py` | 배경 매장 기물. `attach(cfg, clutter_seed, cam_eyes) -> int` |
-| `taskD/taskD_measured.json` | 자리와 치수의 **정본**. 숫자마다 `note` 에 근거와 날짜 |
-| `taskD/store_fixtures.json` | 기물 20종의 크기·중심·밑동. `bake_taskD_tables.py` 가 굽는다 |
-| `taskD/taskD_products.json` | 상품 36종의 크기·밑동·진열 자세. 같은 스크립트가 굽는다 |
-| `taskD/taskD_stock_rules.json` | 칸 간격·잔떨림·필러 목록. 과제 B 에서 구운 값 |
-| `taskD/bake_taskD_tables.py` | 위 세 JSON 을 `cyclo_lab` 에서 굽는다. `--verify` 로 대조만 |
-| `taskD/selftest_taskD.py` | 장면 규칙 자기 시험. **아이작 없이** 돈다 |
+태스크 D 는 과제 B 의 모의판이며 **대회 과제가 아닙니다.** 과제 B 를 그대로 두고 목표 진열대만
+판 한 장짜리 3 단 선반으로 바꾼 연습·검증용 장면입니다. **재생기와 채점기는 없습니다.**
 
-### 한 줄 요약
+### 초기 환경 생성 (`task_d_demo.py`)
 
-판 한 장 선반의 3 열 중 **한 열 앞자리가 비고, 크레이트에 든 하나가 바로 그 자리의 상품**이다.
-빈 자리와 크레이트는 **따로 뽑지 않는다** — 한 뽑기의 두 면이다.
+선반은 3 단 프레임이지만 **판은 맨 위 한 장뿐**이고 아래 두 단은 지지대만 남습니다. 그 판의
+3 열 × 앞뒤 2 줄 중 **한 열의 앞자리가 비고, 비워진 자리의 상품이 책상 위 파란 상자에 하나**
+들어 있습니다. 빈 자리와 상자의 상품은 **따로 뽑지 않습니다** — 한 뽑기의 두 면입니다. 로봇은
+빈손으로 서고, 주변은 매장 집기로 시드마다 다르게 어질러집니다.
 
-### 아직 없는 것
+**Seed 조절:**
 
-`task_d_replay.py` 와 `taskD/scorer/`, `taskD/demos/` 는 없다. 태스크 D 는 모의 장면이고
-기록 형식도 배점표도 아직 정하지 않았다. 생기면 과제 A 의 꼴(`npz` + `meta`/`segment`/
-`score/*` 배열, 그리고 배점·측정·형식 어댑터·유효성 관문을 나눈 `scorer/`)을 따른다.
+- `--seed`: 난수 시드 값. 같은 값이면 언제나 같은 장면입니다. 시드 하나가 선반·상자·배경 세
+  스트림을 md5 로 파생하며, 규칙은 `taskD/taskD_scene_seed.py` 에 전부 있습니다.
+- `--no-clutter`: 배경 집기와 매장 바닥을 빼고 맨 장면만 세웁니다.
+- `--check`: 장면 규칙과 에셋만 검사하고 끝냅니다. SimulationApp 을 띄우지 않아 1 초면 됩니다.
+
+배경 집기는 운동학 고정이라 겹쳐도 물리가 밀어내지 않으므로, 로봇·책상·상자·선반 네 상자에
+여유 **350 mm** 를 두고 거절 추첨으로 피합니다. 매 실행마다 여유를 찍고 0 이하면 멈춥니다.
+
+### 시연 기록 재생 — 없습니다
+
+기록 형식과 배점표를 정하지 않아 `task_d_replay.py` 와 `taskD/scorer/`, `taskD/demos/` 가
+없습니다. 생기면 과제 A 의 꼴을 따릅니다.
+
+파일별 역할과 설계 근거는 **[`taskD/README.md`](taskD/README.md)** 에 있습니다.
+환경 요소·좌표계·치수는 **[`docs/task_d.md`](../docs/task_d.md)** 를 참고하세요.
