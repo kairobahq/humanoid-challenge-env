@@ -1,0 +1,650 @@
+{
+ "abc_chococookie": {
+  "base_offset": 0.0399,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0339,
+   0.1463,
+   0.0799
+  ]
+ },
+ "badacoconut": {
+  "base_offset": 0.035,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.04,
+   0.2151,
+   0.07
+  ]
+ },
+ "butter_ring": {
+  "base_offset": 0.1212,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0407,
+   0.0709,
+   0.2423
+  ]
+ },
+ "butter_waffle": {
+  "base_offset": 0.0742,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 270.0,
+  "shelf_quat": [
+   -0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0892,
+   0.0892,
+   0.1484
+  ]
+ },
+ "cereal_choco": {
+  "base_offset": 0.0697,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0349,
+   0.0797,
+   0.1395
+  ]
+ },
+ "chilsung_cider": {
+  "base_offset": 0.0626,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 270.0,
+  "shelf_quat": [
+   -0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0663,
+   0.066,
+   0.1252
+  ]
+ },
+ "chipchoc": {
+  "base_offset": 0.037,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.06,
+   0.2,
+   0.074
+  ]
+ },
+ "chocobi": {
+  "base_offset": 0.0663,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 302.85,
+  "shelf_quat": [
+   -0.878191761,
+   0.0,
+   0.0,
+   0.47830872
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.08,
+   0.0889,
+   0.1326
+  ]
+ },
+ "cocacola_zero": {
+  "base_offset": 0.0623,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 90.0,
+  "shelf_quat": [
+   0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0669,
+   0.0669,
+   0.1245
+  ]
+ },
+ "couque_dasse": {
+  "base_offset": 0.0682,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 270.0,
+  "shelf_quat": [
+   -0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.1749,
+   0.0375,
+   0.1364
+  ]
+ },
+ "ddalgi_songi": {
+  "base_offset": 0.0619,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.035,
+   0.0849,
+   0.1238
+  ]
+ },
+ "guun_gamja": {
+  "base_offset": 0.0814,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 90.0,
+  "shelf_quat": [
+   0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.04,
+   0.0474,
+   0.1628
+  ]
+ },
+ "guun_goguma": {
+  "base_offset": 0.0815,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 90.0,
+  "shelf_quat": [
+   0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.04,
+   0.0475,
+   0.1629
+  ]
+ },
+ "hoho_potato_cracker": {
+  "base_offset": 0.1075,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 270.0,
+  "shelf_quat": [
+   -0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.054,
+   0.058,
+   0.215
+  ]
+ },
+ "kelloggs_chexchoco_40g": {
+  "base_offset": 0.0439,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 297.94,
+  "shelf_quat": [
+   -0.85689751,
+   0.0,
+   0.0,
+   0.515486816
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0962,
+   0.0963,
+   0.0879
+  ]
+ },
+ "kelloggs_cornfrost_40g": {
+  "base_offset": 0.0438,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 154.15,
+  "shelf_quat": [
+   0.223675415,
+   0.0,
+   0.0,
+   0.97466369
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.096,
+   0.096,
+   0.0877
+  ]
+ },
+ "kelloggs_frootring_40g": {
+  "base_offset": 0.0438,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 117.61,
+  "shelf_quat": [
+   0.517952363,
+   0.0,
+   0.0,
+   0.855409463
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.096,
+   0.096,
+   0.0877
+  ]
+ },
+ "lotte_sand": {
+  "base_offset": 0.1126,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 90.0,
+  "shelf_quat": [
+   0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.048,
+   0.048,
+   0.2251
+  ]
+ },
+ "macha_songi": {
+  "base_offset": 0.0628,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.041,
+   0.0854,
+   0.1257
+  ]
+ },
+ "maxim_coffee": {
+  "base_offset": 0.0897,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0691,
+   0.0817,
+   0.1793
+  ]
+ },
+ "milkis_can": {
+  "base_offset": 0.0612,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 0.0,
+  "shelf_quat": [
+   1.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0658,
+   0.0658,
+   0.1225
+  ]
+ },
+ "nongshim_shin_ramyun_cup": {
+  "base_offset": 0.0559,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 270.0,
+  "shelf_quat": [
+   -0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.1003,
+   0.1003,
+   0.1117
+  ]
+ },
+ "oreo_strawberry": {
+  "base_offset": 0.0257,
+  "crate_flip": true,
+  "crate_upright": false,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.70710678,
+   0.70710678
+  ],
+  "shelf_upright": false,
+  "size": [
+   0.0524,
+   0.2238,
+   0.0514
+  ]
+ },
+ "ottogi_chamkae_ramen": {
+  "base_offset": 0.055,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.1017,
+   0.1017,
+   0.1099
+  ]
+ },
+ "ottogi_cupnoodle_buldak": {
+  "base_offset": 0.0507,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 44.95,
+  "shelf_quat": [
+   0.924046422,
+   0.0,
+   0.0,
+   0.382280277
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.1007,
+   0.1007,
+   0.1014
+  ]
+ },
+ "ottogi_cupnoodle_spicy": {
+  "base_offset": 0.0514,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 19.81,
+  "shelf_quat": [
+   0.985094319,
+   0.0,
+   0.0,
+   0.172015067
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.1005,
+   0.1005,
+   0.1027
+  ]
+ },
+ "ottogi_cupnoodle_udon": {
+  "base_offset": 0.0493,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 102.58,
+  "shelf_quat": [
+   0.625378858,
+   0.0,
+   0.0,
+   0.78032127
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.1019,
+   0.1019,
+   0.0987
+  ]
+ },
+ "ottogi_jin_ramen_hot": {
+  "base_offset": 0.0545,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 206.75,
+  "shelf_quat": [
+   -0.231323428,
+   0.0,
+   0.0,
+   0.972876905
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.1023,
+   0.1023,
+   0.1089
+  ]
+ },
+ "pringles_onion_small": {
+  "base_offset": 0.0506,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 290.53,
+  "shelf_quat": [
+   -0.821796135,
+   0.0,
+   0.0,
+   0.569781636
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0718,
+   0.0717,
+   0.1012
+  ]
+ },
+ "pringles_original_large": {
+  "base_offset": 0.0974,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0716,
+   0.0716,
+   0.1948
+  ]
+ },
+ "pringles_original_small": {
+  "base_offset": 0.0504,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 88.56,
+  "shelf_quat": [
+   0.715936483,
+   0.0,
+   0.0,
+   0.698165419
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0716,
+   0.0716,
+   0.1009
+  ]
+ },
+ "pringles_sourcream_small": {
+  "base_offset": 0.0505,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 280.2,
+  "shelf_quat": [
+   -0.767165152,
+   0.0,
+   0.0,
+   0.641449632
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0717,
+   0.0716,
+   0.101
+  ]
+ },
+ "samyang_buldak_cup": {
+  "base_offset": 0.0551,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 23.75,
+  "shelf_quat": [
+   0.978598866,
+   0.0,
+   0.0,
+   0.205777211
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.1019,
+   0.1019,
+   0.1103
+  ]
+ },
+ "welchs_mango": {
+  "base_offset": 0.0625,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 180.0,
+  "shelf_quat": [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.0659,
+   0.0662,
+   0.125
+  ]
+ },
+ "welchs_zero_grape": {
+  "base_offset": 0.0626,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 321.63,
+  "shelf_quat": [
+   -0.944462435,
+   0.0,
+   0.0,
+   0.328619398
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.066,
+   0.0663,
+   0.1252
+  ]
+ },
+ "yegam_original": {
+  "base_offset": 0.1051,
+  "crate_flip": false,
+  "crate_upright": true,
+  "display_yaw_deg": 270.0,
+  "shelf_quat": [
+   -0.707106781,
+   0.0,
+   0.0,
+   0.707106781
+  ],
+  "shelf_upright": true,
+  "size": [
+   0.055,
+   0.055,
+   0.2102
+  ]
+ }
+}

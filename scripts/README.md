@@ -199,3 +199,34 @@ ${ISAACLAB_PATH}/_isaac_sim/python.sh -u \
 - `--trace DIR`: 채점에 쓸 관측치를 프레임마다 기록
 
 채점은 재생과 분리되어 있습니다. `--trace` 로 남긴 기록을 `scorer/score_from_trace.py` 가 채점하고, `scorer/check_trace.py` 가 기록과 채점 결과의 모순 여부를 검사합니다. 상품 1개당 5개 항목 17점, 계산대 위 3개를 처리하므로 51점 만점입니다. 자체 검증 모듈은 `scorer/selftest.py` 이며, 절차와 판정 기준은 `docs/task_c.md` 6절에 있습니다.
+
+---
+
+## 태스크 D — 과제 B 의 모의판 (목표 선반만 바꿨다)
+
+| 파일 | 무엇 |
+|---|---|
+| `task_d_demo.py` | 시작 장면 하나를 띄운다. `--seed --seconds --settle --shot --scene-json --no-clutter --check` |
+| `taskD/taskD_scene_seed.py` | **씨앗 규칙 전부.** 씨앗 하나 → 선반·크레이트·배경 세 스트림. md5 파생 |
+| `taskD/taskD_layout.py` | 자리와 에셋 경로. 씨앗과 무관한 것 전부. `CYCLOLAB_PATH` 우선 |
+| `taskD/taskD_shelf.py` | 3 단 선반의 기하와 스폰. **판은 맨 위 한 장뿐** |
+| `taskD/taskD_stock.py` | 맨 위 판에 무엇이 서고 어느 한 자리가 비는지. `attach(cfg, shelf_seed) -> int` |
+| `taskD/taskD_crate.py` | 크레이트와 책상, 그리고 크레이트에 든 하나. `attach(cfg, shelf_seed, crate_seed) -> int` |
+| `taskD/taskD_clutter.py` | 배경 매장 기물. `attach(cfg, clutter_seed, cam_eyes) -> int` |
+| `taskD/taskD_measured.json` | 자리와 치수의 **정본**. 숫자마다 `note` 에 근거와 날짜 |
+| `taskD/store_fixtures.json` | 기물 20종의 크기·중심·밑동. `bake_taskD_tables.py` 가 굽는다 |
+| `taskD/taskD_products.json` | 상품 36종의 크기·밑동·진열 자세. 같은 스크립트가 굽는다 |
+| `taskD/taskD_stock_rules.json` | 칸 간격·잔떨림·필러 목록. 과제 B 에서 구운 값 |
+| `taskD/bake_taskD_tables.py` | 위 세 JSON 을 `cyclo_lab` 에서 굽는다. `--verify` 로 대조만 |
+| `taskD/selftest_taskD.py` | 장면 규칙 자기 시험. **아이작 없이** 돈다 |
+
+### 한 줄 요약
+
+판 한 장 선반의 3 열 중 **한 열 앞자리가 비고, 크레이트에 든 하나가 바로 그 자리의 상품**이다.
+빈 자리와 크레이트는 **따로 뽑지 않는다** — 한 뽑기의 두 면이다.
+
+### 아직 없는 것
+
+`task_d_replay.py` 와 `taskD/scorer/`, `taskD/demos/` 는 없다. 태스크 D 는 모의 장면이고
+기록 형식도 배점표도 아직 정하지 않았다. 생기면 과제 A 의 꼴(`npz` + `meta`/`segment`/
+`score/*` 배열, 그리고 배점·측정·형식 어댑터·유효성 관문을 나눈 `scorer/`)을 따른다.

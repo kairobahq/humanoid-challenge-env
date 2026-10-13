@@ -1,0 +1,50 @@
+{
+ "col_pitch": 0.28,
+ "cola": "cocacola_zero",
+ "cols": 3,
+ "crate": {
+  "floor": 0.0107,
+  "inside_x": [
+   -0.1767,
+   0.1767
+  ],
+  "inside_y": [
+   -0.2826,
+   0.2819
+  ],
+  "size": [
+   0.38,
+   0.59,
+   0.14
+  ],
+  "wall_gap": 0.02
+ },
+ "fillers": [
+  "butter_waffle",
+  "cereal_choco",
+  "chilsung_cider",
+  "chocobi",
+  "ddalgi_songi",
+  "guun_gamja",
+  "guun_goguma",
+  "hoho_potato_cracker",
+  "kelloggs_chexchoco_40g",
+  "kelloggs_cornfrost_40g",
+  "kelloggs_frootring_40g",
+  "macha_songi",
+  "maxim_coffee",
+  "milkis_can",
+  "pringles_onion_small",
+  "pringles_original_large",
+  "pringles_sourcream_small",
+  "welchs_mango",
+  "welchs_zero_grape",
+  "yegam_original"
+ ],
+ "front_margin": 0.1,
+ "note": "과제 B 의 cyclo_lab.assets.object.taskB_restock 에서 구운 값. 앞뒤 140 은 손가락이 들어갈 자리, 좌우 280 은 서로 다른 상품을 떨어뜨려 놓으라는 2026-08-07 지시. 잔떨림은 축당 5 mm.",
+ "pringles": "pringles_original_small",
+ "row_pitch": 0.14,
+ "rows": 2,
+ "slot_jitter": 0.005
+}
