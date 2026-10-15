@@ -800,6 +800,85 @@ if R.score(SFL.merge([SFL.measure_one(copy.deepcopy(_HD), _short, SCENE, TH)]))[
     FAIL.append("기록이 5.5 초뿐인데 6 초 항목을 받았다")
 
 
+# ── 2026-10-15: 낙하는 「멈췄다」까지 봐야 한다 (CILAB job508-ep0) ────────────────────
+#
+# 그 판은 163.50 초에 `dropped` 로 14 / 21 에서 끊겼다.  그 프레임의 바구니는 상판 +74.9 mm,
+# 기울기 23 도, 책상 모서리에 5.4 N 으로 걸친 채 **298 mm/s 로 내려가는 중**이었고, 물리를
+# 이어 돌리면 0.16 초 뒤 책상 위에 안착해 멈춘다.  **떨어뜨린 것이 아니라 놓는 중이었다.**
+#
+# 멈춤 조건은 기하 경로에는 처음부터 있었다 (`score_from_log.py` 224 행).  힘 경로에만
+# 빠져 있었고, 아래 넷이 그 구멍과 **그 구멍을 메우다 생길 수 있는 새 구멍**을 함께 막는다.
+# 모두 힘 경로(`_HD`)로 돈다 -- 바뀐 것이 힘 경로다.
+_TOPZ = float(SCENE["desk"]["pos"][2]) + float(SCENE["desk"]["size"][2])
+
+
+def _drop_base():
+    """놓기 전까지 로봇이 쥐고 있는 판 (손을 떼는 자리는 시험마다 다르게 만든다)."""
+    a = {k: np.array(v, copy=True) for k, v in A.items()}
+    a["crate_robot_force"][:] = 5.0
+    a["crate_nonrobot_force"][:] = 0.0
+    return a
+
+
+# ⓐ **상판 ±50 mm 창 밖에서 손을 떼도, 책상 위로 내려앉으면 낙하가 아니다** -- job508 모양.
+#    298 mm/s = 10 Hz 기록에서 프레임당 29.8 mm 다.
+_d = _drop_base()
+_k = _i0 - 3
+for _j, _h in enumerate((0.0749, 0.0451, 0.0153)):
+    _d["crate_pos"][_k + _j, 2] = _TOPZ + _h
+_d["crate_pos"][_i0:, 2] = _TOPZ - 0.0006
+_d["crate_robot_force"][_k:] = 0.0
+_d["crate_nonrobot_force"][_k:_i0] = 5.4      # 책상 모서리에 걸침
+_d["crate_nonrobot_force"][_i0:] = 12.0       # 안착
+_p = SFL.measure_one(copy.deepcopy(_HD), _d, SCENE, TH)
+if _p.get("stopped_why") == "dropped":
+    FAIL.append("상판 75 mm 위에서 손을 떼고 책상 위로 내려앉은 판이 낙하로 찍혔다 (job508)")
+if R.score(SFL.merge([_p]))["items"]["placed"]["points"] == 0:
+    FAIL.append("내려앉은 뒤 제대로 얹혔는데 얹힘을 못 받았다 (job508)")
+
+# ⓑ **진짜 낙하는 그대로 잡힌다** -- 바닥으로 가서 멈춘다.
+_d = _drop_base()
+_k = _i0 - 60
+_d["crate_pos"][_k:, 2] = _TOPZ - 0.70
+_d["crate_robot_force"][_k:] = 0.0
+_d["crate_nonrobot_force"][_k:] = 12.0
+if SFL.measure_one(copy.deepcopy(_HD), _d, SCENE, TH).get("stopped_why") != "dropped":
+    FAIL.append("바닥에 떨어져 멈춘 판이 낙하로 안 찍혔다 -- 멈춤 조건이 너무 넓다")
+
+# ⓒ **떨어뜨린 뒤 판 끝까지 흔들어 낙하를 피해도 점수를 벌지 못한다.**
+#    멈춤 조건의 대가로 남는 빈틈이고, 점수로 막힌다 -- 실측 11 / 21 은 낙하로 끊었을 때와
+#    같다 (얹힘 0 · 머묾 0, 받는 것은 들기 4 + 도착 3 + 안 부딪힘 4).
+_d = _drop_base()
+_k = _i0 - 60
+for _i in range(_k, len(_d["t"])):
+    _d["crate_pos"][_i, 2] = _TOPZ - 0.70 + (0.05 if (_i - _k) % 2 else 0.0)
+_d["crate_robot_force"][_k:] = 0.0
+_d["crate_nonrobot_force"][_k:] = 12.0
+_rs = R.score(SFL.merge([SFL.measure_one(copy.deepcopy(_HD), _d, SCENE, TH)]))
+if _rs["total"] != 11.0:
+    FAIL.append("떨어뜨린 뒤 끝까지 흔든 판이 %g / 21 이다 -- 11 이어야 한다 (낙하로 끊었을 때와 같다)"
+                % _rs["total"])
+for _k2 in ("placed", "stayed"):
+    if _rs["items"][_k2]["points"]:
+        FAIL.append("떨어뜨린 뒤 끝까지 흔든 판이 %s 점수를 받았다" % _k2)
+
+# ⓓ **떨어뜨렸다 다시 집어 놓아도 낙하로 끝난다** -- 가장 이른 프레임이 이긴다.
+#    여기서 **수직** 속도를 쓰는 이유가 드러난다: 3 차원 속도로 재면 바닥에 누운 바구니가
+#    로봇을 따라 수평으로 50 mm/s 끌려가 「멈췄다」가 거짓이 되고, 이 판이 11 -> 18 점이 된다.
+_d = _drop_base()
+_k = _i0 - 60
+_d["crate_pos"][_k:_k + 20, 2] = _TOPZ - 0.70        # 바닥에 멈춤
+_d["crate_robot_force"][_k:_k + 20] = 0.0
+_d["crate_nonrobot_force"][_k:_k + 20] = 12.0
+_d["crate_robot_force"][_k + 20:_i0] = 5.0           # 다시 집음
+_d["crate_pos"][_i0:, 2] = _TOPZ - 0.0006
+_d["crate_robot_force"][_i0:] = 0.0
+_d["crate_nonrobot_force"][_i0:] = 12.0
+if SFL.measure_one(copy.deepcopy(_HD), _d, SCENE, TH).get("stopped_why") != "dropped":
+    FAIL.append("바닥에 떨어뜨렸다 다시 집어 놓은 판이 낙하로 안 찍혔다 "
+                "-- 멈춤을 3 차원 속도로 재면 이렇게 뚫린다")
+
+
 if FAIL:
     print("실패 %d건" % len(FAIL))
     for f in FAIL:
