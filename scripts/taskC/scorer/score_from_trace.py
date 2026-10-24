@@ -82,6 +82,7 @@ def main(trace_path, scene_path, decode_path, out_path=None):
 
     # 지금 다루는 상품은 프레임마다 바뀐다 -- 트레이스가 슬롯을 함께 남긴다.
     # 슬롯이 없는 옛 트레이스는 종전대로 첫 상품만 대상으로 본다.
+    # (슬롯이 없는 실시간 평가는 왼손 기준점 두 개(154.8 mm · 184.5 mm)로 정한다 -- docs/task_c.md §6)
     def target_of(row):
         sl = row.get("slot")
         if sl is None:
