@@ -278,6 +278,11 @@ class TaskCScorer:
     배선하지 않은 콜백의 항목은 UNAVAILABLE 로 남는다.
 
     products: [{slug, shape, get_pose(), half_extents|radius/half_height, expected_code}, ...]
+
+    grasp_fn(slug): 그 상품을 지금 쥐었는가. 채점기는 귀속을 직접 하지 않는다.
+      재생기(score_from_trace)는 트레이스의 slot 으로 정한다. 실시간 평가에서는 왼손 기준점 두 개
+      (arm_l_link7 에서 툴 -Z 로 154.8 mm = JAW_OFFSET, 184.5 mm = 패드 중심) 중 하나라도 상품 표면
+      30 mm 이내인 상품 중 가장 가까운 하나로 정한다 (docs/task_c.md §6, 2026-10-24).
     """
 
     def __init__(self, products, cfg: ScoreConfig, *,
@@ -388,7 +393,7 @@ class TaskCScorer:
         for slug, prod in self.products.items():
             sc = self.scores[slug]
             amin, amax = self._aabb(prod)
-            grasped = self.grasp_fn(slug)
+            grasped = self.grasp_fn(slug)   # 귀속 규칙은 클래스 설명의 grasp_fn 항목 참고
 
             # --- Sub 1-1 그리퍼 모터 부하 0.3초 연속
             # 액추에이터가 하나라 V홈이든 팁이든 구분하지 않는다 -- 부하 하나로 본다.
