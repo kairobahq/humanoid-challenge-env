@@ -252,6 +252,7 @@ python3 scripts/taskC/scorer/check_trace.py out/trace
 * 왼손 기준점은 **두 개**입니다. `arm_l_link7` 원점에서 툴 −Z 방향으로 **154.8 mm**(`JAW_OFFSET`, 손가락 뿌리 쪽)와 **184.5 mm**(= 0.078 + 0.1065, 손가락 패드 중심)입니다.
 * 두 점 중 **하나라도** 상품 표면까지 최단 거리가 **30 mm 이내**면 그 상품에 귀속합니다. 거리는 두 점 중 가까운 쪽으로 재고, 30 mm 안의 상품이 여럿이면 **가장 가까운 하나**에만 귀속합니다.
 * 154.8 mm 한 점만 쓰면 기준점이 패드보다 약 30 mm 손목 쪽에 있어, 캔 윗부분을 얕게 쥔 경우 실제로 쥐고 들어도 30 mm 를 넘어 파지부터 0점이 됩니다. 184.5 mm 를 더해 이 경우를 인정하고, 154.8 mm 를 남겨 깊게 쥔 경우의 판정은 그대로 둡니다.
+* 코드: `scripts/taskC/scorer/taskc_scorer.py` 의 `attribute_grasp` · `TaskCScorer.attributed` (기준점·반경은 `ScoreConfig.attr_offsets_m` · `attr_radius_m`), 시험은 `selftest.py` [5].
 
 #### QR 판독은 스캐너 카메라 이미지로 합니다
 

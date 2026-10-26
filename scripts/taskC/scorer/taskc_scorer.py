@@ -69,6 +69,10 @@ class ScoreConfig:
     release_speed_max: float = 0.010     # 10 mm/s 미만이면 「멈췄다」
     pts_place: float = 3.0
 
+    # 실시간 평가의 「쥔 상품」 귀속 (2026-10-24, docs/task_c.md §6) -- attribute_grasp 가 쓴다
+    attr_offsets_m: tuple = (0.1548, 0.1845)   # arm_l_link7 에서 툴 -Z 로: JAW_OFFSET(뿌리 쪽) · 0.078+0.1065(패드 중심)
+    attr_radius_m: float = 0.030               # 두 점 중 하나라도 상품 표면까지 이 안이면 귀속
+
     # 중지 조건
     fall_speed_max: float = 0.010        # 낙하 판정도 10 mm/s
     fall_clear_m: float = 0.020          # 상판보다 이만큼 아래로 내려가야 「떨어졌다」.
@@ -269,6 +273,26 @@ class ProductScore:
         }
 
 
+# --------------------------------------------------------------------------- 귀속
+
+def attribute_grasp(link7_pos, link7_quat, prods, offsets=(0.1548, 0.1845), radius=0.030):
+    """지금 왼손이 쥔 상품 하나를 고른다. 없으면 None.
+
+    기준점은 arm_l_link7 원점에서 툴 로컬 -Z 로 offsets 만큼 간 점들이다(기본 154.8 mm · 184.5 mm).
+    상품마다 두 점 중 가까운 쪽의 표면 거리를 재고, radius 안의 상품 중 가장 가까운 하나를 돌려준다.
+    prods: {slug: geometry.closest_dist 가 받는 상품 뷰(shape, pos, quat, ...)}. link7_quat 은 (w, x, y, z).
+    """
+    p0 = np.asarray(link7_pos, dtype=float)
+    R = TaskCScorer._rot(link7_quat)
+    pts = [p0 + R @ np.array([0.0, 0.0, -float(o)]) for o in offsets]
+    best, best_d = None, float(radius)
+    for slug, v in prods.items():
+        d = min(closest_dist(p, v) for p in pts)
+        if d <= best_d:
+            best, best_d = slug, d
+    return best
+
+
 # --------------------------------------------------------------------------- 채점기
 
 class TaskCScorer:
@@ -283,6 +307,8 @@ class TaskCScorer:
       재생기(score_from_trace)는 트레이스의 slot 으로 정한다. 실시간 평가에서는 왼손 기준점 두 개
       (arm_l_link7 에서 툴 -Z 로 154.8 mm = JAW_OFFSET, 184.5 mm = 패드 중심) 중 하나라도 상품 표면
       30 mm 이내인 상품 중 가장 가까운 하나로 정한다 (docs/task_c.md §6, 2026-10-24).
+      그 계산이 `attributed(link7_pos, link7_quat)` 다. 예: grasp_fn = lambda s: closed() and
+      scorer.attributed(*link7_pose()) == s
     """
 
     def __init__(self, products, cfg: ScoreConfig, *,
@@ -377,6 +403,12 @@ class TaskCScorer:
         if prod["shape"] == "box":
             v["half_extents"] = he
         return v
+
+    def attributed(self, link7_pos, link7_quat):
+        """지금 상품 자세로 왼손 귀속 상품(slug)을 고른다. 없으면 None. 규칙은 attribute_grasp."""
+        views = {s: self._prod_view(p) for s, p in self.products.items()}
+        return attribute_grasp(link7_pos, link7_quat, views,
+                               self.cfg.attr_offsets_m, self.cfg.attr_radius_m)
 
     # ------------------------------------------------------------------ 본체
     def tick(self, t: float):
