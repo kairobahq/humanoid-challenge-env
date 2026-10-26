@@ -12,7 +12,7 @@ import numpy as np
 
 from geometry import (aabb_from_obb, aabb_xy_overlaps_rect, closest_dist_box,
                       closest_dist_cylinder, obb_sample_points)
-from taskc_scorer import ScoreConfig, TaskCScorer
+from taskc_scorer import ScoreConfig, TaskCScorer, attribute_grasp
 
 OK = "  OK  "
 _n = [0]
@@ -299,9 +299,42 @@ def test_weak_grip_after_lift():
     check("들기 통과 없이 닫힘만으로는 판독 안 됨", not sc2.scores["q"].decode.passed)
 
 
+def test_attribution():
+    print("\n[5] 쥔 상품 귀속 -- 왼손 기준점 두 개(154.8 mm · 184.5 mm), 30 mm (2026-10-24)")
+    up = (0.0, 1.0, 0.0, 0.0)              # x 축 180도: 툴 -Z 가 위(+Z)
+    can = dict(shape="cylinder", pos=np.zeros(3), quat=(1, 0, 0, 0), radius=0.033, half_height=0.0615)
+    top = 0.0615
+    q0 = (1.0, 0.0, 0.0, 0.0)              # 단위 자세: 툴 -Z 가 아래(-Z) -- 위에서 내려온 손
+    l7_shallow = np.array([0.0, 0.0, top + 0.035 + 0.1548])   # 뿌리 점 35 mm 위 (job663·660 의 E 와 같은 꼴)
+    check("뿌리 점 35 mm -- 옛 규칙이면 밖, 새 규칙은 패드 점 5.3 mm 로 귀속",
+          attribute_grasp(l7_shallow, q0, {"c": can}, offsets=(0.1548,)) is None
+          and attribute_grasp(l7_shallow, q0, {"c": can}) == "c")
+    l7_deep = np.array([0.0, 0.0, top - 0.040 + 0.1548])      # 깊게 쥠: 뿌리 점이 캔 안
+    check("깊게 쥠 -- 옛 규칙과 같이 귀속",
+          attribute_grasp(l7_deep, q0, {"c": can}, offsets=(0.1548,)) == "c"
+          and attribute_grasp(l7_deep, q0, {"c": can}) == "c")
+    l7_far = np.array([0.0, 0.0, top + 0.031 + 0.1845])  # 패드 점도 31 mm 위
+    check("두 점 다 30 mm 밖 -- 귀속 없음", attribute_grasp(l7_far, q0, {"c": can}) is None)
+    can2 = dict(can, pos=np.array([0.075, 0.0, 0.0]))          # 옆 캔: 표면 간격 9 mm
+    l7_mid = np.array([0.030, 0.0, top + 0.005 + 0.1845])   # a 5 mm · b 13 mm
+    check("여럿이 30 mm 안 -- 가장 가까운 하나",
+          attribute_grasp(l7_mid, q0, {"a": can, "b": can2}) == "a")
+    # 자세 반영: x 축 180도 돌리면 툴 -Z 가 위를 본다 -> 캔 아래에서 위로 쥔 꼴
+    l7_up = np.array([0.0, 0.0, -top + 0.010 - 0.1845])
+    check("손 자세(쿼터니언)를 따라 기준점이 놓인다", attribute_grasp(l7_up, up, {"c": can}) == "c"
+          and attribute_grasp(l7_up, q0, {"c": can}) is None)
+    # 채점기 메서드: 상품 현재 자세로 같은 결과
+    p = FakeProduct("k", "1")
+    sc = TaskCScorer([p.spec()], ScoreConfig(), table_z=0.96, band_rect=(0.11, 0.50, -0.01, 0.57),
+                     beam_origin_fn=lambda: np.zeros(3), grasp_fn=lambda s: None)
+    check("TaskCScorer.attributed -- 상품 자세로 귀속",
+          sc.attributed(p.pos + l7_shallow, q0) == "k" and sc.attributed(p.pos + l7_far, q0) is None)
+
+
 if __name__ == "__main__":
     test_geometry()
     test_full_run()
     test_rules()
     test_weak_grip_after_lift()
+    test_attribution()
     print(f"\n전부 통과 — {_n[0]}개 검사")
