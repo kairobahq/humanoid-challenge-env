@@ -4,11 +4,6 @@
 정책이 보낸 액션 청크를 로봇에서 실행하기 **전에**, 실제로 보낼 궤적 전체에서 로봇 부품끼리 너무 가까워지는지 판정합니다.
 같은 코드로 여러분의 정책 출력을 미리 검사해 볼 수 있습니다.
 
-> *English summary*: pre-execution self-collision gate for the ROBOTIS AI Worker (FFW-SG2) used by the real-robot
-> evaluation dashboard. It rebuilds the exact joint trajectory that will be sent for an action chunk, samples it densely,
-> and checks distances between URDF collision shapes (convex hulls, refined with the original meshes near the limit)
-> against `padding + 0.02 s × relative speed`. A chunk passes, is cut to a verified prefix, or is rejected.
-
 ## 판정 기준
 
 허용 거리: **d ≥ 기본 여유 + 0.02 s × v** (v = 두 부품이 서로 가까워질 수 있는 상대 속도 상한, m/s)
