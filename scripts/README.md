@@ -15,6 +15,7 @@
 | `zed_depth/` | 세 재생기의 `--zed-depth` 가 쓰는 **머리 depth 부품**과 ZED SDK 컨테이너의 depth 서버 (`docs/zed_depth.md`) |
 | `taskB/` | 과제 B 의 **채점기**(`taskb_score.py`)와 `task_b_replay.py`가 트는 **시연 기록 일곱 판**(`demos/`, 2.4 MB) |
 | `taskC/` | 과제 C 의 **장면 정의 모듈**, `task_c_replay.py` 가 트는 **시연 기록**(`demos/` 품목별 4편, `demos_gt/` 정답 궤적 2편 — GT0 은 상품 3개 모두 성공, GT1 은 1개 실패), **장면 파일 1,089 + 560개**(`scenes/`, `scenes/release2/`), **기타 진열대 진열 12벌**(`stores/`), **채점기**(`scorer/`) |
+| `selfcoll/` | **실기 자기 충돌 사전 검사기** — 실기 대시보드가 청크를 실행하기 전에 쓰는 판정 코드 그대로. 정책 출력을 미리 검사해 볼 수 있습니다 (`selfcoll/README.md`) |
 
 ### 코드는 여기, 에셋은 이미지
 
