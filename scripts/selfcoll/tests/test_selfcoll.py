@@ -13,6 +13,7 @@ pytest.importorskip("coal")
 pytest.importorskip("scipy")
 
 from aiw_selfcoll import POSE_KEYS, SelfCollision, chunk_path, close_pairs, urdf_limits  # noqa: E402
+from aiw_selfcoll.selfcoll import wrist_pairs  # noqa: E402
 from aiw_selfcoll.robot import default_urdf  # noqa: E402
 
 if not default_urdf().exists():
@@ -51,8 +52,10 @@ def test_pairs_and_paddings(c):
     close = close_pairs(c.pairs)
     pad = dict(zip(c.pairs, c._pad))
     assert len(c.pairs) > 500 and c.kin_excluded
-    assert all(pad[p] == pytest.approx(0.02) for p in close)
-    assert sum(v == pytest.approx(0.03) for v in pad.values()) == len(c.pairs) - len(close)
+    wrist = wrist_pairs(c.pairs)
+    assert len(wrist) == 2 and all(pad[p] == pytest.approx(0.016) for p in wrist)
+    assert all(pad[p] == pytest.approx(0.02) for p in close if p not in wrist)
+    assert sum(v == pytest.approx(0.03) for v in pad.values()) == len(c.pairs) - len(set(close) | set(wrist))
     assert ("arm_r_link2", "arm_r_link5") in close or ("arm_r_link5", "arm_r_link2") in close      # 같은 팔 접기
     assert not any(("arm_l" in a and "arm_r" in b) or ("arm_r" in a and "arm_l" in b) for a, b in close)   # 양팔 사이는 기본
     assert not any(any(x in (a, b) for x in ("arm_base_link", "base_link")) and "gripper" in a + b for a, b in close)
@@ -80,7 +83,7 @@ def test_deep_elbow_fold_is_cut(c, lim):
 
 
 def test_reject_when_nothing_safe_and_no_shared_state(c, lim):
-    """이미 기준에 걸린 자세에서 더 접으면 거부. 판정은 반환값에만 있고 객체에 남지 않는다."""
+    """기준 근처 자세에서 더 접으면 막힌다. 판정은 반환값에만 있고 객체에 남지 않는다."""
     g = c.gate_chunk(q_home(), ramp("arm_r_joint4", -2.9), PERIOD, HOME, lim)
     q = q_home()
     i = POSE_KEYS.index("arm_r_joint4")
@@ -101,7 +104,7 @@ def test_fast_motion_needs_more_room(c, lim):
 def brute(c, Q, times):
     """모든 샘플·모든 쌍을 원래 메시 거리로 — check_path 의 건너뛰기·거르기 없이. 하한을 깬 첫 (샘플, 쌍) | None."""
     d0 = c.distances(Q[0], exact=True)
-    thr0 = np.minimum(c._pad, np.maximum(d0, c.HARD_FLOOR))
+    thr0 = np.minimum(c._pad, d0)
     thr = thr0 + c.SPEED_K * (thr0 >= c._pad) * c.pair_speeds(Q, times)
     for i in range(len(Q)):
         v = thr[i] - c.distances(Q[i], exact=True, limit=thr[i])   # 하한 근처는 원래 메시로 (껍질 거리는 실제보다 작다)
@@ -139,3 +142,51 @@ def test_worker_process_matches(c, lim):
     finally:
         p.close()
     assert (got["verdict"], got["n_exec"]) == (want["verdict"], want["n_exec"])
+
+
+def at(**joints):
+    q = q_home()
+    for k, v in joints.items():
+        q[POSE_KEYS.index(k)] = v
+    return q
+
+
+def test_wrist_roll_limit_86deg_both_arms(c, lim):
+    """손목 link6 ↔ 그리퍼 몸체: 오른팔 joint7 −86°, 왼팔 +86° 까지 (천천히 돌릴 때)."""
+    for s, sign in (("r", -1), ("l", 1)):
+        j = f"arm_{s}_joint7"
+        ok = c.gate_chunk(q_home(), ramp(j, sign * np.radians(84)), PERIOD * 4, HOME, lim)
+        assert ok["verdict"] == "pass", (s, ok["full"]["bad_pair"])
+        far = c.gate_chunk(q_home(), ramp(j, sign * np.radians(95)), PERIOD * 4, HOME, lim)
+        assert far["verdict"] in ("truncate", "reject")
+        assert set(far["full"]["bad_pair"]["pair"]) == {f"arm_{s}_link6", f"gripper_{s}_rh_p12_rn_base"}
+
+
+def test_below_elbow_pairs_that_never_touch_are_excluded(c):
+    """팔꿈치 아래(link4–7·손목 카메라·그리퍼) 같은 팔 쌍은 손목 link6 ↔ 그리퍼 몸체만 검사한다 (나머지는 관절 한계상 닿지 않음)."""
+    low = lambda x: any(x == f"arm_{s}_link{i}" for s in "lr" for i in (4, 5, 6, 7)) or x.startswith(("gripper_", "camera_"))
+    side = lambda x: "l" if x == "camera_left_link" or x.startswith(("arm_l_", "gripper_l_")) else "r"
+    checked = {frozenset(p) for p in c.pairs if low(p[0]) and low(p[1]) and side(p[0]) == side(p[1])}
+    assert checked == {frozenset(p) for p in wrist_pairs(c.pairs)}
+
+
+def test_start_inside_padding_can_hold_or_escape_but_not_dig_in(c, lim):
+    """이미 하한 안(손목 −92°·−97°, 1.6 cm 미만)에서 시작: 가만히·빠져나오기는 통과, 더 파고들기는 막힘 (예전엔 0.5 cm 아래면 모두 거부)."""
+    for deg in (92, 97):     # 0.9 cm, 0.2 cm (닿기 직전 — 닿은 뒤에는 메시 거리가 0 으로 머물러 깊이를 못 잰다)
+        q = at(arm_r_joint7=-np.radians(deg))
+        A = np.zeros((5, 22))
+        A[:, POSE_KEYS.index("arm_r_joint7")] = (q[POSE_KEYS.index("arm_r_joint7")] - HOME["arm_r_joint7"]) / 0.5
+        assert c.gate_chunk(q, A, PERIOD, HOME, lim)["verdict"] == "pass", deg                       # 가만히
+        assert c.gate_chunk(q, ramp("arm_r_joint7", 0.0, q0=q), PERIOD, HOME, lim)["verdict"] == "pass", deg   # 빠져나오기
+        g = c.gate_chunk(q, ramp("arm_r_joint7", lim["arm_r_joint7"][0], n=5, q0=q), PERIOD, HOME, lim)
+        assert g["verdict"] in ("truncate", "reject"), deg                                            # 더 비틀기
+
+
+def test_gripper_hold_point_does_not_fake_speed(c, lim):
+    """그리퍼를 쥔 채(실측 0.3, 지령 1.0) 짧은 정지 청크: 10 ms 유지 점의 가짜 속도로 거부되면 안 된다."""
+    q = at(gripper_r_joint1=0.3)
+    A = np.zeros((3, 22))
+    A[:, 14] = HOME["gripper_r_joint1"] - 1.0                      # 그리퍼 지령 = clip(home − a) = 1.0
+    for n in (3, 5, 8, 15):
+        g = c.gate_chunk(q, np.resize(A, (n, 22)), PERIOD, HOME, lim, grip_cmd={"gripper_r_joint1": 1.0})
+        assert g["verdict"] == "pass", (n, g["full"]["bad_pair"])

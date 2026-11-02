@@ -70,6 +70,15 @@ def internal_pairs(links):
     return {frozenset((a, b)) for a in links for b in links if a < b and module_of(a) == module_of(b)} | MOUNTED
 
 
+#: 손목 link6 ↔ 같은 손 그리퍼 몸체의 여유. joint7 을 끝까지 비틀면 실제로 닿는다 (오른팔 −100° 이후, 왼팔 +100° 이후:
+#: 오른팔 −80° 2.4 cm, −86° 1.6 cm, −92° 0.9 cm). 1.6 cm = 양팔 ±86° 까지 허용 (운영 기준). 그 밖의 손목 각도에서는 5 cm 위.
+WRIST_PAD = 0.016
+
+
+def wrist_pairs(pairs):
+    return [p for p in pairs for s in "lr" if set(p) == {f"arm_{s}_link6", f"gripper_{s}_rh_p12_rn_base"}]
+
+
 def close_pairs(pairs):
     """원래 가까운 이웃 쌍 → close_padding 을 쓴다.
     ① 손목 관절 옆 팔 link5·6 ↔ 같은 손 부품, 리프트 기둥 ↔ 머리: 기준 자세에서도 5.4–6.5 cm 라 padding 을 키우면
@@ -296,7 +305,7 @@ class SelfCollision:
     def close_padding(self, v):
         """close_pairs 의 여유 (m)."""
         self._close_pad = float(v)
-        self.set_pair_padding({p: self._close_pad for p in close_pairs(self.pairs)})
+        self.set_pair_padding({p: self._close_pad for p in close_pairs(self.pairs)} | {p: WRIST_PAD for p in wrist_pairs(self.pairs)})
 
     def set_pair_padding(self, overrides):
         """{(링크a, 링크b): 여유 m} — 순서 무관. 빈 dict 면 모두 기본값."""
@@ -342,7 +351,6 @@ class SelfCollision:
                                  G[b].geometry, coal.Transform3s(M[b].rotation, M[b].translation), self._req, self._res)
         return self._refine(d, M, limit)
 
-    HARD_FLOOR = 0.005   # m — 이미 padding 안에서 시작해도 이 아래로는 절대 허용하지 않는다
     # 속도 비례 여유 (s): 하한 = padding + SPEED_K × (그 순간 두 부품의 상대 속도 상한 v, m/s — pair_speeds).
     # 빠를수록 실제 팔이 계획 경로에서 벗어나는 양(경로 이탈·끝점 넘침)이 커지는 몫. 실기 속도 시험(왼팔, 관절 상태 100 Hz
     # 기록)에서 손 0.7 m/s 까지 경로 이탈 최대 1.6 cm (속도와 거의 무관 — 청크 경계에서 정지 출발 계획과 실제 관성의 차이).
@@ -363,6 +371,13 @@ class SelfCollision:
         """pair_speeds 의 압축형 → (Pm[구간, 쌍], seg[M]): 샘플 i 의 값 = Pm[seg[i]]. [M, 쌍] 전체를 펼치지 않는다."""
         M = len(Q)
         qd = np.gradient(Q, times, axis=0)
+        # 팔 궤적 맨 앞 GRIP_KEEP_S 점: 그리퍼가 실측 → 직전 지령으로 10 ms 안에 '이동'하는 것으로 계산되지만(물체를 쥐면
+        # 실측 < 지령) 실제 손가락은 움직이지 않는다 → 그 구간 그리퍼 속도는 뺀다 (위치 차이는 거리 검사에 그대로 들어간다).
+        # 빼지 않으면 75–190 rad/s 가 잡혀 짧은 청크가 22 cm 하한으로 거부되고, 긴 청크는 격자에 따라 놓친다.
+        hold = times <= GRIP_KEEP_S
+        if hold.any():
+            hold[min(int(hold.sum()), len(hold) - 1)] = True                # 경계 다음 샘플 (중앙 차분이 유지 구간을 본다)
+            qd[np.ix_(hold, [POSE_KEYS.index(g) for g in GRIPPERS])] = 0.0
         gi = np.unique(np.linspace(0, M - 1, min(M, n_grid)).round().astype(int))
         if not hasattr(self, "_vel_map"):     # 프레임은 형상끼리 겹친다 → 고유 프레임만 재고 형상으로 펼친다
             frames = [go.parentFrame for go in self.geom.geometryObjects]
@@ -396,9 +411,9 @@ class SelfCollision:
 
     def thresholds(self, q_start):
         """쌍마다 허용 하한. 보통은 padding. 시작 자세에서 이미 padding 안인 쌍은 '지금보다 가까워지지만 않으면' 허용
-        (빠져나오는 청크까지 막혀 얼어붙지 않게) — 단 HARD_FLOOR 아래는 안 된다 (조금씩 파고드는 것 방지)."""
-        d0 = self.distances(q_start)
-        return np.minimum(self._pad, np.maximum(d0, self.HARD_FLOOR))
+        (빠져나오는 청크까지 막혀 얼어붙지 않게). 예전에는 0.5 cm 바닥을 두었는데, 추종 오차로 그 아래에서 시작하면
+        가만히 있기·빠져나오기까지 모두 거부돼 리셋 전까지 못 움직였다 → 바닥 없이 '지금보다 가까워지지 말 것'만."""
+        return np.minimum(self._pad, self.distances(q_start))
 
     def check_path(self, Q, stop_at_first=False, deadline=None, times=None):
         """경로 Q[M, 19] → (최소 거리 m, 그 쌍, 그 샘플 번호, 하한을 깬 첫 샘플 번호 | None, 거리 잰 샘플 수, 시간 초과,
@@ -415,12 +430,12 @@ class SelfCollision:
         누적 접근 상한 ≥ 경로 중 하한의 최댓값인 쌍은 경로 내내 하한 위가 보장되므로 표에서 뺀다. 판정·첫 위반 샘플은
         같다 (위반 여부는 메시 거리로 재고, 건너뛰기는 위반 샘플을 넘지 못한다). 최소 거리는 잰 샘플 기준이라 달라질 수 있다."""
         d0 = self.distances(Q[0])
-        thr0 = np.minimum(self._pad, np.maximum(d0, self.HARD_FLOOR))       # = thresholds(Q[0])
+        thr0 = np.minimum(self._pad, d0)                                     # = thresholds(Q[0])
         dQ = np.abs(np.diff(Q, axis=0))
         speed = times is not None and self.SPEED_K > 0 and len(Q) > 1
         if speed:
             Pm, seg = self._speed_grid(Q, times)                               # 두 부품 상대 속도 상한 m/s (압축형)
-            k_on = self.SPEED_K * (thr0 >= self._pad)                          # 시작부터 안인 쌍은 속도 몫 없음
+            k_on = self.SPEED_K * (thr0 >= self._pad)                          # 시작부터 안인 쌍은 속도 몫 없음 ('가까워지지 말 것'만)
             thr_max = thr0 + k_on * Pm.max(0)
         else:
             thr_max = thr0
